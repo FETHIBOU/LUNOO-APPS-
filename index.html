@@ -1,0 +1,1427 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lunoo - Apprentissage Magique</title>
+    
+    <link rel="stylesheet" href="style.css">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_landmarker/face_landmarker.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <header style="text-align: center; padding: 20px;">
+        <img src="logo_lunoo.png" alt="Lunoo Logo" id="main-logo" style="width: 120px; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.1));">
+        <h1 style="font-family: 'Fredoka One', cursive; color: #6c5ce7;">Lunoo</h1>
+    </header>
+
+    <div id="app-container">
+        </div>
+
+    <div id="calibration-magique" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(255,255,255,0.95); z-index: 20000; flex-direction: column; justify-content: center; align-items: center;">
+        <h2 style="color: #6c5ce7; font-family: 'Fredoka One', cursive; margin-bottom: 20px;">🪄 وقت السحر</h2>
+        <div id="calibration-emoji" style="font-size: 120px; animation: pulse 2s infinite;">🍎</div>
+        <p id="calibration-texte" style="margin-top: 30px; font-size: 24px; font-weight: bold; color: #333; text-align: center; max-width: 80%; direction: rtl;">
+            الذكاء الاصطناعي يجهز السحر...
+        </p>
+    </div>
+
+    <script type="module">
+import { FilesetResolver, FaceLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+
+window.currentLang="ar";
+window.listeUtilisateurs=[];
+window.cinemaTimer=null;
+window.isCinemaMode=false;
+window.originalSpeed=1.0;
+window.isSlowingDown=false;
+window.framesBaillement=0;
+window.currentFocusLevel=100;
+window.state={nom:"Invité",matricule:"",coins:0,hearts:3,unlockedSkins:['none'],skin:'none',startTime:0};
+window.settings={blink:0.5,dist:20};
+window.lecons=[];window.phrases=[];window.idx=0;
+window.isReading=false;window.isPaused=false;window.isSequenceMode=false;window.isCoachMode=false;
+window.faceLandmarker=null;window.webcamRunning=false;window.camActiveUser=false;
+window.totalBlinks=0;window.attentionPauses=0;window.wasBlinking=false;window.distractionBuffer=0;
+window.audioPlayer=new Audio();
+window.timerKaraoke=null;
+window.isAutoCalibrating=false;window.autoCalibData={head:[],eyes:[]};
+window.recognition=null;window.isVoiceActive=false;
+window.hasSmiled=false;
+window.isCalibratedThisSession=false;
+window.blinkBuffer=[];
+window.distBufferHistory=[];
+window.SMOOTHING_FACTOR=5;
+window.comboCount=0;
+window.lastDistractionTime=Date.now();
+window.currentXP=parseInt(localStorage.getItem('lunoo_xp'))||0;
+window.sessionHeatmap={};
+window.isDrawing=false;
+window.currentLessonIdEditing=null;
+window.isPaintActive=false;
+window.isPaintingReading=false;
+window.isRulerFixed = false; // NOUVEAU : Etat de la règle
+
+// 🧠 Algorithme de détection des inversions (Dyslexie)
+window.detecterInversion = (cible, prononce) => {
+    let c = cible.toLowerCase().replace(/[^a-zàâçéèêëîïôûùüÿñæœ\-]/g, '');
+    let p = prononce.toLowerCase().replace(/[^a-zàâçéèêëîïôûùüÿñæœ\-]/g, '');
+    if (c === p || c.length !== p.length) return false;
+    let diffCount = 0; let lettresC = []; let lettresP = [];
+    for (let i = 0; i < c.length; i++) {
+        if (c[i] !== p[i]) {
+            diffCount++; lettresC.push(c[i]); lettresP.push(p[i]);
+        }
+    }
+    if (diffCount === 2 && lettresC[0] === lettresP[1] && lettresC[1] === lettresP[0]) return true;
+    return false;
+};
+
+window.calculerSimilitude=(s1,s2)=>{let longer=s1;let shorter=s2;if(s1.length<s2.length){longer=s2;shorter=s1;}let longerLength=longer.length;if(longerLength==0)return 100.0;let costs=new Array();for(let i=0;i<=longer.length;i++){let lastValue=i;for(let j=0;j<=shorter.length;j++){if(i==0){costs[j]=j;}else{if(j>0){let newValue=costs[j-1];if(longer.charAt(i-1)!=shorter.charAt(j-1))newValue=Math.min(Math.min(newValue,lastValue),costs[j])+1;costs[j-1]=lastValue;lastValue=newValue;}}}if(i>0)costs[shorter.length]=lastValue;}return((longerLength-costs[shorter.length])/parseFloat(longerLength))*100.0;};
+window.showMsg=(txt,color)=>{const el=document.getElementById('login-msg');if(el){el.innerText=txt;el.style.color=color;}};
+window.updateXPBar=()=>{let progress=window.currentXP%100;const fill=document.getElementById('xp-fill');if(fill)fill.style.width=progress+"%";};
+window.updateHud=()=>{let hearts=document.getElementById('hud-hearts');if(hearts)hearts.innerText="❤️".repeat(window.state.hearts)+"🖤".repeat(Math.max(0,3-window.state.hearts));let coins=document.getElementById('hud-coins');if(coins)coins.innerText=window.state.coins;};
+window.renderShop=()=>{const items=[{id:'none',icon:'🐱',price:0,l:'Normal'},{id:'glasses',icon:'🤓',price:30,l:'Intello'},{id:'robot',icon:'🤖',price:80,l:'Robot'},{id:'pirate',icon:'🏴‍☠️',price:120,l:'Pirate'}];let g=document.getElementById('shop-items');if(!g)return;g.innerHTML="";document.getElementById('shop-coins-display').innerText=window.state.coins;items.forEach(i=>{let d=document.createElement('div');d.className=`shop-item ${window.state.unlockedSkins.includes(i.id)?'owned':''} ${window.state.skin===i.id?'selected':''}`;d.innerHTML=`<div style="font-size:35px">${i.icon}</div><div>${i.l}</div><div style="color:var(--gold)">${i.price} 💰</div>`;d.onclick=()=>{if(window.state.unlockedSkins.includes(i.id)){window.state.skin=i.id;window.renderShop();window.updateMascotSVG();}else if(window.state.coins>=i.price){window.state.coins-=i.price;window.state.unlockedSkins.push(i.id);window.state.skin=i.id;window.renderShop();window.updateHud();window.updateMascotSVG();}};g.appendChild(d);});};
+window.updateMascotSVG=()=>{const svgs=['mascot-accessory','preview-mascot-accessory'];svgs.forEach(id=>{let acc=document.getElementById(id);if(!acc)return;acc.innerHTML="";if(window.state.skin==='glasses')acc.innerHTML='<rect x="25" y="40" width="20" height="10" stroke="black" fill="none" stroke-width="2"/><rect x="55" y="40" width="20" height="10" stroke="black" fill="none" stroke-width="2"/><line x1="45" y1="45" x2="55" y2="45" stroke="black" stroke-width="2"/>';if(window.state.skin==='robot')acc.innerHTML='<rect x="40" y="20" width="20" height="10" fill="gray"/><circle cx="50" cy="15" r="3" fill="red"/>';if(window.state.skin==='pirate')acc.innerHTML='<path d="M20 30 Q50 10 80 30 L80 20 L20 20 Z" fill="black"/><circle cx="65" cy="45" r="13" fill="black"/>';});};
+window.animateMascot=(blinkScore,smileScore,browScore)=>{document.querySelectorAll('#lid-left, #lid-right').forEach(l=>l.style.height=(blinkScore*12)+"px");const mouth=document.querySelector('#mascot-body path[fill="#fdcb6e"]');if(mouth){if(smileScore>0)mouth.setAttribute("d","M40 60 Q50 70 60 60");else if(browScore>0)mouth.setAttribute("d","M40 65 Q50 55 60 65");else mouth.setAttribute("d","M45 55 L55 55 L50 65 Z");}};
+window.loadSettings=()=>{const sb=localStorage.getItem('lunoo_blink');const sd=localStorage.getItem('lunoo_dist');if(sb){window.settings.blink=parseFloat(sb)/100;if(document.getElementById('slider-seuil')){document.getElementById('slider-seuil').value=sb;document.getElementById('seuil-display').innerText=sb+"%";document.getElementById('threshold-marker').style.left=sb+"%";}}if(sd){window.settings.dist=parseInt(sd);if(document.getElementById('slider-distraction')){document.getElementById('slider-distraction').value=sd;document.getElementById('dist-display').innerText=sd;}}};
+window.makeElementDraggable=(elmnt)=>{var pos1=0,pos2=0,pos3=0,pos4=0;var header=elmnt.querySelector('.drag-handle');if(header){header.onmousedown=(e)=>{e=e||window.event;e.preventDefault();pos3=e.clientX;pos4=e.clientY;document.onmouseup=()=>{document.onmouseup=null;document.onmousemove=null;};document.onmousemove=(e)=>{e=e||window.event;e.preventDefault();pos1=pos3-e.clientX;pos2=pos4-e.clientY;pos3=e.clientX;pos4=e.clientY;elmnt.style.top=(elmnt.offsetTop-pos2)+"px";elmnt.style.left=(elmnt.offsetLeft-pos1)+"px";};};}};
+window.updateSeuil=(v)=>{window.settings.blink=v/100;document.getElementById('seuil-display').innerText=v+"%";document.getElementById('threshold-marker').style.left=v+"%";};
+window.updateDistraction=(v)=>{window.settings.dist=parseInt(v);document.getElementById('dist-display').innerText=v;};
+window.updateSpeed=(v)=>{document.getElementById('val-vitesse').innerText=v;window.audioPlayer.playbackRate=v;};
+window.updateSize=(v)=>{
+    document.getElementById('val-taille').innerText=v;
+    document.getElementById('zone-lecture').style.fontSize=v+'px';
+    
+    const regle=document.getElementById('focus-line');
+    if(regle){
+        // 📏 NOUVEAU : On augmente fortement la hauteur (x 2.6) pour couvrir toutes les voyelles arabes !
+        regle.style.height=(v * 2.6) + 'px'; 
+    }
+};
+window.updateLetterSpacing=(v)=>{const affichage=document.getElementById('val-spacing');if(affichage)affichage.innerText=v;const zone=document.getElementById('zone-lecture');if(zone){zone.style.wordSpacing=v+"px";const mots=zone.querySelectorAll('.mot-cliquable');mots.forEach(m=>{m.style.marginLeft=(4+(parseInt(v)/2))+"px";});}};
+
+window.toggleLanguage=()=>{
+    window.currentLang=(window.currentLang==='ar')?'fr':'ar';
+    const btn=document.getElementById('btn-lang');
+    if(btn){
+        if(window.currentLang==='fr'){
+            btn.innerText="FR";btn.style.background="#0984e3";
+            document.documentElement.dir="ltr";
+            document.getElementById('zone-lecture').style.direction="ltr";
+            document.getElementById('zone-lecture').style.textAlign="left";
+        }else{
+            btn.innerText="AR";btn.style.background="#e84393";
+            document.documentElement.dir="rtl";
+            document.getElementById('zone-lecture').style.direction="rtl";
+            document.getElementById('zone-lecture').style.textAlign="center";
+        }
+    }
+    alert(window.currentLang==='fr'?"🇫🇷 Mode Français activé !":"🇸🇦 Mode Arabe activé !");
+    window.changerLecon(); 
+};
+
+window.toggleTunnel=()=>{document.body.classList.toggle('tunnel-active');document.getElementById('btn-tunnel').classList.toggle('active');};
+window.toggleColors=()=>{document.body.classList.toggle('colors-active');document.getElementById('btn-colors').classList.toggle('active');};
+window.cycleTheme=()=>{if(document.body.classList.contains('dark-mode')){document.body.classList.remove('dark-mode');document.body.classList.add('sepia-mode');}else if(document.body.classList.contains('sepia-mode')){document.body.classList.remove('sepia-mode');}else{document.body.classList.add('dark-mode');}};
+window.toggleFont=()=>{document.body.classList.toggle('dys-spaced');document.body.style.fontFamily=document.body.style.fontFamily.includes('OpenDyslexic')?"'Amiri', serif":"'OpenDyslexic', sans-serif";};
+window.toggleImmersive=()=>{if(!document.body.classList.contains('immersive-active')){document.documentElement.requestFullscreen().catch(()=>{});document.body.classList.add('immersive-active');}else{if(document.fullscreenElement)document.exitFullscreen();document.body.classList.remove('immersive-active');}};
+window.toggleFocusLine=()=>{
+    const line=document.getElementById('focus-line');
+    const btn=document.getElementById('btn-focus');
+    if(line.style.display==='none'||!line.style.display){
+        line.style.display='block';
+        btn.classList.add('active');
+        const tailleActuelle=document.getElementById('slider-taille').value;
+        window.updateSize(tailleActuelle);
+        const zoneLecture = document.getElementById('zone-lecture');
+        if(zoneLecture) {
+            const rect = zoneLecture.getBoundingClientRect();
+            line.style.left = rect.left + "px";
+            line.style.width = rect.width + "px";
+        }
+    }else{
+        line.style.display='none';
+        btn.classList.remove('active');
+    }
+};
+window.isSyllabicMode = false;
+
+// Fonction utilitaire pour découper un mot (Approche basique pour le Français et l'Arabe)
+window.decouperEnSyllabes = (mot) => {
+    if (window.currentLang === 'ar') {
+        // Pour l'arabe : Sépare visuellement après les voyelles/harakat ou lettres avec soukoun
+        return mot.replace(/([^\u064B-\u0652\s]+[\u064B-\u0652]*)/g, "$1 <span style='color:#ccc; margin:0 3px;'>/</span> ");
+    } else {
+        // Pour le français : Sépare de manière basique (consonne+voyelle)
+        return mot.replace(/([^aeiouyéèêâîôû]+[aeiouyéèêâîôû]+)/gi, "$1 <span style='color:#ccc; margin:0 3px;'>/</span> ");
+    }
+};
+window.isSyllabicMode = false;
+
+// Le cerveau de découpage avancé (Corrigé pour les Mad)
+window.formaterSyllabes = (motBrut) => {
+    let syllabes = [];
+    let cleanMot = motBrut.trim();
+    if(!cleanMot) return "";
+
+    if (window.currentLang === 'ar') {
+        // --- NOUVEL ALGORITHME ARABE (Taqti' intelligent) ---
+        // CORRECTION ICI : Suppression du "+" pour forcer la lecture lettre par lettre stricte
+        const regexLettre = /([^\u064B-\u065F\s][\u064B-\u065F]*)/g;
+        let blocs = cleanMot.match(regexLettre);
+        
+        if (blocs) {
+            let syllabeEnCours = "";
+            for (let i = 0; i < blocs.length; i++) {
+                let bloc = blocs[i];
+                
+                // Si c'est le début d'une nouvelle syllabe
+                if (syllabeEnCours === "") {
+                    syllabeEnCours = bloc;
+                    continue;
+                }
+
+                // Analyse du bloc actuel
+                let aUnSukun = bloc.includes('\u0652'); // Présence d'un Soukoun
+                
+                // Est-ce une lettre de prolongation (Madd) ?
+                let baseChar = bloc.replace(/[\u064B-\u065F]/g, '').trim();
+                let nApasDeVoyelle = !(/[\u064B-\u0651\u0653-\u065F]/.test(bloc)); 
+                let estLettreMadd = (['ا', 'و', 'ي', 'ى', 'آ'].includes(baseChar) && nApasDeVoyelle);
+
+                // Règle d'assemblage
+                if (aUnSukun || estLettreMadd) {
+                    // On fusionne avec la syllabe précédente (ex: حَ + ا = حَا)
+                    syllabeEnCours += bloc;
+                } else {
+                    // On ferme la syllabe précédente et on en commence une nouvelle
+                    syllabes.push(syllabeEnCours);
+                    syllabeEnCours = bloc;
+                }
+            }
+            if (syllabeEnCours !== "") {
+                syllabes.push(syllabeEnCours);
+            }
+        } else {
+            syllabes = [cleanMot];
+        }
+
+    } else {
+        // --- ALGORITHME FRANÇAIS ---
+        let regexFR = /([^aeiouyéèêëàâîïôûùüœæ]*[aeiouyéèêëàâîïôûùüœæ]+(?:[^aeiouyéèêëàâîïôûùüœæ](?![aeiouyéèêëàâîïôûùüœæ]))?)/gi;
+        let match = cleanMot.match(regexFR);
+        syllabes = match ? match : [cleanMot];
+    }
+
+    // --- ASSEMBLAGE FINAL AVEC LES COULEURS ---
+    let htmlResult = "";
+    syllabes.forEach((syl, index) => {
+        let colorClass = index % 2 === 0 ? "syllabe-0" : "syllabe-1";
+        htmlResult += `<span class="${colorClass}">${syl}</span>`;
+        if (index < syllabes.length - 1) {
+            htmlResult += `<span class="syllabe-sep">/</span>`;
+        }
+    });
+    return htmlResult;
+};
+// Le bouton d'activation
+window.toggleSyllabic = () => {
+    window.isSyllabicMode = !window.isSyllabicMode;
+    const btn = document.getElementById('btn-syllabic');
+    
+    if(window.isSyllabicMode) {
+        btn.classList.add('active');
+        document.body.classList.add('syllabic-active');
+        document.getElementById('status').innerText = "✂️ Mode Syllabes Activé";
+        
+        document.querySelectorAll('.mot-cliquable').forEach(motSpan => {
+            if (!motSpan.dataset.htmlOriginal) motSpan.dataset.htmlOriginal = motSpan.innerHTML;
+            // On nettoie les symboles avant de découper
+            let texteBrut = motSpan.innerText.replace(/[🛑⏱️]/g,''); 
+            motSpan.innerHTML = window.formaterSyllabes(texteBrut);
+        });
+    } else {
+        btn.classList.remove('active');
+        document.body.classList.remove('syllabic-active');
+        document.getElementById('status').innerText = "Prêt";
+        
+        // Rétablir le texte normal
+        document.querySelectorAll('.mot-cliquable').forEach(motSpan => {
+            if (motSpan.dataset.htmlOriginal) motSpan.innerHTML = motSpan.dataset.htmlOriginal;
+        });
+    }
+};
+
+window.togglePaintMode = () => {
+    window.isPaintActive = !window.isPaintActive;
+    const btn = document.getElementById('btn-paint');
+    
+    if(window.isPaintActive){
+        // ON ACTIVE LE MODE
+        document.body.classList.add('paint-active');
+        if(btn) btn.classList.add('active');
+        window.stopAudio(true);
+        if(document.getElementById('status')) document.getElementById('status').innerText = "🖌️ Mode Étiquette : Clique ou glisse pour cacher des mots !";
+    } else {
+        // ON DÉSACTIVE LE MODE
+        document.body.classList.remove('paint-active');
+        if(btn) btn.classList.remove('active');
+        
+        // Révéler instantanément tous les mots cachés
+        document.querySelectorAll('.mot-cliquable.masked').forEach(mot => {
+            mot.classList.remove('masked');
+        });
+        
+        if(document.getElementById('status')) document.getElementById('status').innerText = "Prêt";
+    }
+};
+
+window.loadIA=async()=>{try{if(!FilesetResolver)return;const fr=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");window.faceLandmarker=await FaceLandmarker.createFromOptions(fr,{baseOptions:{modelAssetPath:`https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,delegate:"GPU"},outputFaceBlendshapes:true,runningMode:"VIDEO",numFaces:1});console.log("IA Loaded");if(window.updateXPBar)window.updateXPBar();}catch(e){console.log("IA Error:",e);}};
+
+window.startCam=(vEl,isCalib)=>{window.webcamRunning=true;navigator.mediaDevices.getUserMedia({video:true}).then((st)=>{vEl.srcObject=st;if(isCalib)window.calibStream=st;vEl.play();vEl.addEventListener("loadeddata",()=>{const loop=async()=>{if(!window.faceLandmarker){requestAnimationFrame(loop);return;}if(isCalib){if(document.getElementById('calibration-modal').style.display==='none')return;}else{if(!window.webcamRunning)return;}try{const res=window.faceLandmarker.detectForVideo(vEl,performance.now());let distracted=false;let tropPres=false;if(res.faceBlendshapes.length>0&&res.faceLandmarks.length>0){if(!isCalib&&document.getElementById('cam-status'))document.getElementById('cam-status').className="status-dot active";const lm=res.faceLandmarks[0];const cats=res.faceBlendshapes[0].categories;let rawScore=(cats.find(c=>c.categoryName==='eyeBlinkLeft').score+cats.find(c=>c.categoryName==='eyeBlinkRight').score)/2;window.blinkBuffer.push(rawScore);if(window.blinkBuffer.length>window.SMOOTHING_FACTOR)window.blinkBuffer.shift();let smoothScore=window.blinkBuffer.reduce((a,b)=>a+b)/window.blinkBuffer.length;const nose=lm[1];const leftCheek=lm[234];const rightCheek=lm[454];const mid=(leftCheek.x+rightCheek.x)/2;const faceWidth=Math.abs(rightCheek.x-leftCheek.x);let rawDistVal=Math.min(100,(Math.abs(nose.x-mid)/faceWidth)*300);window.distBufferHistory.push(rawDistVal);if(window.distBufferHistory.length>window.SMOOTHING_FACTOR)window.distBufferHistory.shift();let smoothDistVal=window.distBufferHistory.reduce((a,b)=>a+b)/window.distBufferHistory.length;const distYeux=Math.sqrt(Math.pow(lm[263].x-lm[33].x,2)+Math.pow(lm[263].y-lm[33].y,2));if(distYeux>0.22){tropPres=true;}const levreHaut=lm[13];const levreBas=lm[14];if(Math.abs(levreBas.y-levreHaut.y)>0.05){window.framesBaillement++;}else{window.framesBaillement=Math.max(0,window.framesBaillement-1);}let isSmiling=((((lm[0].y+lm[17].y)/2)-((lm[61].y+lm[291].y)/2))>0.02);let isFrowning=(((Math.abs(lm[66].y-lm[159].y)+Math.abs(lm[296].y-lm[386].y))/2)<0.025);const alerteDist=document.getElementById('alerte-distance');if(!isCalib){if(tropPres){document.body.classList.add('flou-myopie');if(alerteDist)alerteDist.style.display='block';}else{if(document.body.classList.contains('flou-myopie')){document.body.classList.remove('flou-myopie');if(alerteDist)alerteDist.style.display='none';}}if(window.framesBaillement>40){const alerteF=document.getElementById('alerte-fatigue');if(alerteF){alerteF.style.display='block';setTimeout(()=>{alerteF.style.display='none';window.framesBaillement=0;},4000);}}const badgeRalenti=document.getElementById('smart-slow-badge');if(isFrowning&&!tropPres&&!window.isSlowingDown&&window.isReading&&!window.isPaused){window.isSlowingDown=true;if(window.audioPlayer.playbackRate>=1.0)window.originalSpeed=parseFloat(document.getElementById('slider-vitesse').value);window.audioPlayer.playbackRate=Math.max(0.7,window.originalSpeed-0.2);if(badgeRalenti)badgeRalenti.style.display='block';window.animateMascot(smoothScore,0,1);}else if(!isFrowning&&window.isSlowingDown){window.isSlowingDown=false;window.audioPlayer.playbackRate=window.originalSpeed;if(badgeRalenti)badgeRalenti.style.display='none';}}if(smoothDistVal>window.settings.dist){distracted=true;if(!isFrowning&&!isCalib)window.animateMascot(smoothScore,0,1);}else{if(!distracted&&!tropPres&&window.isReading&&!window.isPaused){let timeSinceD=(Date.now()-window.lastDistractionTime)/1000;if(timeSinceD>10){window.comboCount=Math.min(5,Math.floor(timeSinceD/10));let bdg=document.getElementById('combo-badge');if(bdg)bdg.style.display='block';let cVal=document.getElementById('combo-val');if(cVal)cVal.innerText=window.comboCount;if(!isFrowning)window.animateMascot(smoothScore,isSmiling?1:0.5,0);if(isSmiling&&!window.hasSmiled){if(typeof confetti!=="undefined")confetti({particleCount:30,spread:50});window.hasSmiled=true;}}}else{let bdg=document.getElementById('combo-badge');if(bdg)bdg.style.display='none';if(!isFrowning&&!window.isSlowingDown)window.animateMascot(smoothScore,0,0);}}if(isCalib){if(document.getElementById('blink-fill'))document.getElementById('blink-fill').style.width=Math.round(smoothScore*100)+"%";if(document.getElementById('dist-fill'))document.getElementById('dist-fill').style.width=smoothDistVal+"%";if(window.isAutoCalibrating){window.autoCalibData.eyes.push(smoothScore);window.autoCalibData.head.push(smoothDistVal);}}else{if(smoothScore>window.settings.blink&&!window.wasBlinking){if(window.isReading){window.totalBlinks++;if(document.getElementById('kpi-blinks'))document.getElementById('kpi-blinks').innerText=window.totalBlinks;}window.wasBlinking=true;}else if(smoothScore<=window.settings.blink){window.wasBlinking=false;}}if(!isCalib&&window.isReading&&window.camActiveUser&&!tropPres){if(distracted){window.distractionBuffer++;if(window.distractionBuffer>20){if(!window.isPaused){window.isPaused=true;window.audioPlayer.pause();speechSynthesis.pause();document.body.classList.add('attention-lost');let hudBox=document.getElementById('hud-ia-box');if(hudBox)hudBox.classList.add('distraction-hud-alert');let st=document.getElementById('status');if(st)st.innerText="⚠️ Regarde l'écran !";window.attentionPauses++;if(document.getElementById('kpi-distraction'))document.getElementById('kpi-distraction').innerText=window.attentionPauses;window.lastDistractionTime=Date.now();window.comboCount=0;let bdg=document.getElementById('combo-badge');if(bdg)bdg.style.display='none';}}}else{if(window.distractionBuffer>0)window.distractionBuffer-=2;if(window.isPaused&&window.distractionBuffer<=0){window.distractionBuffer=0;window.isPaused=false;document.body.classList.remove('attention-lost');let hudBox=document.getElementById('hud-ia-box');if(hudBox)hudBox.classList.remove('distraction-hud-alert');let st=document.getElementById('status');if(st)st.innerText="Lecture...";window.audioPlayer.play();speechSynthesis.resume();window.lastDistractionTime=Date.now();}}}}else{if(!isCalib&&document.getElementById('cam-status'))document.getElementById('cam-status').className="status-dot distracted";}}catch(e){}requestAnimationFrame(loop);};loop();});}).catch(e=>{window.webcamRunning=false;alert("Erreur Caméra: Vérifiez les permissions.");});};
+window.startAutoCalibration=()=>{if(!window.webcamRunning){alert("Activez la caméra d'abord !");return;}window.isAutoCalibrating=true;window.autoCalibData={head:[],eyes:[]};document.getElementById('auto-calib-overlay').style.display='flex';let count=3;document.getElementById('auto-calib-text').innerText="Analyse en cours... "+count;let timer=setInterval(()=>{count--;if(count>0)document.getElementById('auto-calib-text').innerText="Analyse en cours... "+count;else{clearInterval(timer);window.finishAutoCalibration();}},1000);};
+window.finishAutoCalibration=()=>{window.isAutoCalibrating=false;document.getElementById('auto-calib-overlay').style.display='none';if(window.autoCalibData.head.length>0){let idealDist=Math.max(10,Math.min(50,Math.ceil(Math.max(...window.autoCalibData.head)*1.5)+5));window.updateDistraction(idealDist);document.getElementById('slider-distraction').value=idealDist;}if(window.autoCalibData.eyes.length>0){let idealBlink=Math.max(30,Math.min(80,Math.round((window.autoCalibData.eyes.reduce((a,b)=>a+b,0)/window.autoCalibData.eyes.length+0.35)*100)));window.updateSeuil(idealBlink);document.getElementById('slider-seuil').value=idealBlink;}alert("✅ Calibration terminée !");};
+
+window.toggleCam = () => {
+    const b = document.getElementById('btn-cam');
+    const statusDot = document.getElementById('cam-status');
+
+    if (!window.camActiveUser) {
+        // --- NOUVEAU : On lance d'abord l'expérience Gemini ---
+        if (typeof window.lancerCalibrationMagique === "function") {
+            window.lancerCalibrationMagique();
+        }
+
+        b.classList.add('active');
+        window.camActiveUser = true;
+        if (statusDot) statusDot.className = "status-dot active";
+        
+        // On démarre la caméra
+        if (!window.webcamRunning) window.startCam(document.getElementById('webcam'), false);
+        
+        document.getElementById('status').innerText = "👁️ IA et Caméra Activées";
+    } else {
+        // Désactivation normale
+        b.classList.remove('active');
+        window.camActiveUser = false;
+        window.webcamRunning = false;
+        let v = document.getElementById('webcam');
+        if (v && v.srcObject) { v.srcObject.getTracks().forEach(t => t.stop()); v.srcObject = null; }
+        if (statusDot) statusDot.className = "status-dot";
+        document.body.classList.remove('attention-lost');
+        let hudBox = document.getElementById('hud-ia-box');
+        if (hudBox) hudBox.classList.remove('distraction-hud-alert');
+        document.getElementById('status').innerText = "❌ IA Désactivée";
+        
+        // On s'assure que l'écran magique est bien fermé
+        document.getElementById('calibration-magique').style.display = 'none';
+    }
+};
+
+window.simulerKaraoke=(span,dur,isFallback=false)=>{
+    clearInterval(window.timerKaraoke);
+    try{
+        let mots=Array.from(span.querySelectorAll('.mot-cliquable'));
+        if(mots.length===0)return;
+        if(!dur||dur<=0||!isFinite(dur)){dur=mots.length*0.4;isFallback=true;}
+        let tempsParMot=(dur*1000)/mots.length;
+        let startTime=Date.now();
+        let lastIndex = -1; 
+        window.timerKaraoke=setInterval(()=>{
+            if(window.isPaused||(!isFallback&&window.audioPlayer.paused&&!window.isReading)){
+                startTime+=50;return;
+            }
+            let elapsed=isFallback?(Date.now()-startTime):(window.audioPlayer.currentTime*1000);
+            let indexMotActuel=Math.floor(elapsed/tempsParMot);
+
+            if(indexMotActuel !== lastIndex && indexMotActuel < mots.length){
+                lastIndex = indexMotActuel;
+                mots.forEach((m,i)=>{
+                    if(i===indexMotActuel){
+                        m.classList.add('highlight-mot');
+                        if (window.isSyllabicMode) m.classList.add('loupe-active'); // NOUVEAU: La loupe !
+                        const r = m.getBoundingClientRect();
+                        
+                        let tailleTexte = parseInt(document.getElementById('slider-taille').value) || 40;
+                        let decalageBas = tailleTexte * 0.90; // 👈 CORRECTION ICI
+
+                        document.documentElement.style.setProperty('--spot-x',(r.left+r.width/2)+'px');
+                        document.documentElement.style.setProperty('--spot-y',(r.top+r.height/2 + decalageBas)+'px');
+                        
+                        const line = document.getElementById('focus-line');
+                        if(line && line.style.display === 'block') {
+                            let offsetH = line.offsetHeight || 30;
+                            line.style.top = (r.top + (r.height / 2) - (offsetH / 2) + decalageBas) + "px";
+                        }
+                    }else{
+                        m.classList.remove('highlight-mot');
+                        m.classList.remove('loupe-active'); // NOUVEAU: On retire la loupe
+                    }
+                });
+            }
+        },50);
+    }catch(e){console.log(e);}
+};
+
+window.jouerPhrase=(span)=>{
+    if(!span)return;
+    window.isReading=true;window.isPaused=false;window.audioPlayer.pause();speechSynthesis.cancel();clearInterval(window.timerKaraoke);
+    document.querySelectorAll('.highlight-mot').forEach(e=>e.classList.remove('highlight-mot'));
+    document.querySelectorAll('.phrase.active').forEach(e=>e.classList.remove('active'));
+    
+    span.classList.add('active');
+    span.scrollIntoView({behavior:"smooth",block:"center"});
+
+    const premierMot = span.querySelector('.mot-cliquable') || span;
+    const rect = premierMot.getBoundingClientRect();
+    
+    let tailleTexte = parseInt(document.getElementById('slider-taille').value) || 40;
+    let decalageBas = tailleTexte * 0.90; // 👈 CORRECTION ICI
+
+    document.documentElement.style.setProperty('--spot-x',(rect.left+rect.width/2)+'px');
+    document.documentElement.style.setProperty('--spot-y',(rect.top+rect.height/2 + decalageBas)+'px');
+    
+    const line = document.getElementById('focus-line');
+    if(line && line.style.display === 'block') {
+        let offsetH = line.offsetHeight || 30;
+        line.style.top = (rect.top + (rect.height / 2) - (offsetH / 2) + decalageBas) + "px";
+    }
+
+    const motsCaches=span.querySelectorAll('.mot-cliquable.masked');
+    
+    if(motsCaches.length>0){
+        document.getElementById('status').innerText="🤫 Chut... Mystère !";
+        const tousLesMots=Array.from(span.querySelectorAll('.mot-cliquable'));
+        window.jouerSequenceSpeciale(tousLesMots,0,span);
+    }else{
+        document.getElementById('status').innerText="Chargement...";
+        // --- DEBUT DE LA CORRECTION AUDIO ---
+        // On reconstruit le texte proprement sans les slashs pour la synthèse vocale
+        let textePropre = "";
+        span.querySelectorAll('.mot-cliquable').forEach(motSpan => {
+            // Si le mot original a été sauvegardé en cache, on l'utilise, sinon on prend le texte normal
+            if (motSpan.dataset.htmlOriginal) {
+                let tempDiv = document.createElement('div');
+                tempDiv.innerHTML = motSpan.dataset.htmlOriginal;
+                textePropre += tempDiv.innerText + " ";
+            } else {
+                textePropre += motSpan.innerText + " ";
+            }
+        });
+        // On enlève les symboles de respiration
+        textePropre = textePropre.replace(/[🛑⏱️]/g, '').trim();
+        // --- FIN DE LA CORRECTION AUDIO ---
+        google.script.run.withSuccessHandler(b64=>{
+            if(!b64||b64==="ERREUR"){
+                let u=new SpeechSynthesisUtterance(textePropre);
+                u.lang=(window.currentLang==='fr')?'fr-FR':'ar-SA';
+                u.rate=parseFloat(document.getElementById('slider-vitesse').value);
+                let motsTotal=textePropre.split(" ").length;let dureeEst=motsTotal*0.4;
+                u.onstart=()=>window.simulerKaraoke(span,dureeEst,true);
+                let nextFired=false;
+                let passerSuite=()=>{if(nextFired)return;nextFired=true;window.state.coins+=1;window.updateHud();if(window.isSequenceMode)window.passerAuSuivant();else window.stopAudio(false);};
+                u.onend=passerSuite;u.onerror=passerSuite;
+                setTimeout(()=>speechSynthesis.speak(u),10);
+                return;
+            }
+            if(!window.isReading)return;
+            window.audioPlayer.src="data:audio/mp3;base64,"+b64;
+            window.audioPlayer.playbackRate=parseFloat(document.getElementById('slider-vitesse').value);
+            window.audioPlayer.onerror=()=>{if(window.isSequenceMode)window.passerAuSuivant();};
+            window.audioPlayer.onloadedmetadata=()=>{window.simulerKaraoke(span,window.audioPlayer.duration,false);window.audioPlayer.play();document.getElementById('status').innerText="Lecture...";};
+            window.audioPlayer.onended=()=>{window.state.coins+=1;window.updateHud();if(window.isSequenceMode)window.passerAuSuivant();else window.stopAudio(false);};
+        }).getAudioProxy(textePropre,window.currentLang);
+    }
+};
+window.enrichirTypographie=(mot)=>{let html=mot;if(html.startsWith("ال")){html=html.replace("ال","<span class='article-defini'>ال</span>");}html=html.replace(/([\u064B-\u0650\u0652])/g,"<span class='voyelle-courte'>$1</span>");html=html.replace(/(\u0651)/g,"<span class='shadda'>$1</span>");return html;};
+
+window.stopAudio=(reset)=>{
+    try {
+        window.audioPlayer.pause();
+        speechSynthesis.cancel();
+        clearInterval(window.timerKaraoke);
+        window.isReading=false;
+        window.isPaused=false;
+        window.isSequenceMode=false;
+        window.isCoachMode=false;
+        if(typeof window.recognition!=='undefined'&&window.recognition!==null){try{window.recognition.stop();}catch(e){}}
+        document.querySelectorAll('.voice-listening').forEach(el=>el.classList.remove('voice-listening','active'));
+        document.querySelectorAll('.highlight-mot').forEach(e=>e.classList.remove('highlight-mot'));
+        
+        if(reset){
+            window.idx=0;
+            document.querySelectorAll('.phrase.active').forEach(e=>e.classList.remove('active'));
+            if(document.getElementById('status'))document.getElementById('status').innerText="Prêt";
+        }else{
+            if(document.getElementById('status'))document.getElementById('status').innerText="Pause";
+        }
+    } catch(e) { console.log("Erreur stopAudio:", e); }
+};
+
+window.changerLecon = () => {
+    try {
+        window.stopAudio(true);
+        window.sessionHeatmap = {};
+        window.totalBlinks = 0;
+        window.attentionPauses = 0;
+        window.distractionBuffer = 0;
+        window.framesBaillement = 0;
+        window.comboCount = 0;
+        if (window.state) window.state.startTime = Date.now();
+        if (document.getElementById('kpi-blinks')) document.getElementById('kpi-blinks').innerText = "0";
+        if (document.getElementById('kpi-distraction')) document.getElementById('kpi-distraction').innerText = "0";
+        const btnDet = document.getElementById('btn-detective');
+        if (btnDet) btnDet.classList.remove('active');
+
+        let i = document.getElementById('choix-lecon').value;
+        if (!window.lecons || !window.lecons[i]) return;
+
+        let l = window.lecons[i];
+        
+        // --- 1. ONGLET LECTURE ---
+        let zone = document.getElementById('zone-lecture');
+        let imgContainer = document.getElementById('lesson-image-container');
+        let imgEl = document.getElementById('lesson-img');
+
+        if (l.imageUrl && l.imageUrl.includes("http")) {
+            let finalUrl = l.imageUrl.includes("file/d/") ? "https://lh3.googleusercontent.com/d/" + l.imageUrl.split("file/d/")[1].split("/")[0] : l.imageUrl;
+            imgEl.src = finalUrl;
+            imgContainer.style.display = "flex";
+        } else {
+            imgContainer.style.display = "none";
+        }
+
+        zone.innerHTML = "";
+        window.phrases = [];
+
+        let txtBrut = l.texte || l[3] || "";
+        let txt = String(txtBrut).trim();
+
+        if (txt.length > 0) {
+            let segments = txt.match(/[^.!?؟\n]+[.!?؟\n]*/g) || [txt];
+            segments.forEach(seg => {
+                if (seg.trim().length === 0) return;
+                let span = document.createElement('span');
+                span.className = "phrase";
+
+                let motIndex = 0;
+                seg.trim().split(/\s+/).forEach(w => {
+                    if (w.trim() === "") return;
+                    let m = document.createElement('span');
+                    m.className = "mot-cliquable";
+
+                    if (motIndex % 2 === 0) m.classList.add('mot-pair');
+                    else m.classList.add('mot-impair');
+                    motIndex++;
+
+                    m.innerHTML = window.enrichirTypographie(w) + " ";
+                    m.onmousedown = (e) => { if (window.isPaintActive) { e.preventDefault(); e.stopPropagation(); window.isPaintingReading = true; m.classList.toggle('masked'); } };
+                    m.onmouseenter = (e) => { if (window.isPaintActive && window.isPaintingReading) { m.classList.toggle('masked'); } };
+                    m.onclick = (e) => { e.stopPropagation(); if (window.isPaintActive || m.classList.contains('masked')) return; window.lireMot(w); };
+                    span.appendChild(m);
+
+                    if (w.includes('،') || w.includes(',')) {
+                        let resp = document.createElement('span');
+                        resp.className = 'respiration-courte';
+                        resp.innerText = '⏱️';
+                        span.appendChild(resp);
+                    }
+                });
+
+                if (seg.includes('.') || seg.includes('?') || seg.includes('!') || seg.includes('؟') || seg.includes('\n')) {
+                    let resp = document.createElement('createElement');
+                    resp.className = 'respiration-longue';
+                    resp.innerText = '🛑';
+                    span.appendChild(resp);
+                }
+                span.onclick = (e) => { if (window.isPaintActive || e.target.classList.contains('masked')) return; window.stopAudio(true); window.idx = window.phrases.indexOf(span); window.jouerPhrase(span); };
+                zone.appendChild(span);
+                window.phrases.push(span);
+            });
+        }
+        
+        // --- 2. ONGLET COMPRÉHENSION (Conversations avec Gemini) ---
+        const quizzContainer = document.getElementById('quizz-container');
+        if (quizzContainer && l.q_question && l.q_question.trim() !== "") {
+             quizzContainer.innerHTML = `
+                <div class="quizz-question" style="text-align:right; direction:rtl; padding: 30px; background: #fff; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); max-width: 600px; margin: 0 auto;">
+                    <div style="font-size: 50px; text-align: center; margin-bottom: 10px;">🤖</div>
+                    <h3 style="color: var(--accent); text-align: center; font-family: 'Fredoka One', cursive; margin-bottom: 20px;">تحدث مع الذكاء الاصطناعي</h3>
+                    <p style="font-weight:bold; font-size:1.5em; margin-bottom:30px; color: #333; text-align: center;">${l.q_question}</p>
+                    
+                    <div style="display: flex; justify-content: center;">
+                        <button id="btn-repondre-ia" onclick="window.lancerEcouteGemini(\`${txtBrut.replace(/`/g, "'")}\`, \`${l.q_question.replace(/`/g, "'")}\`)" style="background: linear-gradient(45deg, #0984e3, #6c5ce7); color:white; border:none; padding: 15px 40px; font-size: 1.5em; border-radius: 50px; cursor: pointer; box-shadow: 0 4px 15px rgba(108, 92, 231, 0.4); display: flex; align-items: center; gap: 15px; transition: all 0.3s;">
+                            🎤 اضغط وأجب بصوتك
+                        </button>
+                    </div>
+                    <p id="msg-gemini-retour" style="font-size: 1.2em; font-weight: bold; margin-top: 25px; text-align: center; min-height: 50px; line-height: 1.5;"></p>
+                </div>
+            `;
+        } else if (quizzContainer) {
+            quizzContainer.innerHTML = "<p>لا يوجد سؤال لهذا الدرس.</p>";
+        }
+
+        // --- 3. ONGLET MATHS (Exercice de Concentration) ---
+        window.genererExerciceMaths();
+
+        document.getElementById('progress-bar').style.width = "0%";
+        document.getElementById('status').innerText = "Prêt";
+        let slider = document.getElementById('slider-spacing');
+        if (slider && slider.value > 0) window.updateLetterSpacing(slider.value);
+        
+        // S'assurer qu'on affiche l'onglet lecture par défaut quand on change de leçon
+        let btnLecture = document.querySelector('.lunoo-tabs .tab-btn:first-child');
+        if(btnLecture) window.changerOnglet('tab-lecture', btnLecture);
+
+    } catch (err) { console.log("Erreur chargement leçon :", err); }
+};
+
+// Fonction pour vérifier le quizz directement dans l'onglet
+window.verifierQuizzDirect = () => {
+    const i = document.getElementById('choix-lecon').value;
+    const l = window.lecons[i];
+    const selected = document.querySelector('input[name="quizz-opt"]:checked');
+    if (!selected) {
+        alert("Veuillez choisir une réponse !");
+        return;
+    }
+    if (selected.value.trim() === l.q_reponse.toString().trim()) {
+        if (typeof confetti !== "undefined") confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+        alert("Excellent ! Bonne réponse. (+20 💰)");
+        window.state.coins += 20;
+        window.updateHud();
+    } else {
+        alert("Dommage ! La bonne réponse était : " + l.q_reponse);
+    }
+};
+
+// Fonction pour générer un petit exercice de calcul mental aléatoire
+window.genererExerciceMaths = () => {
+    const mathContainer = document.getElementById('tab-math');
+    if (!mathContainer) return;
+    
+    // On génère des nombres simples (entre 1 et 10)
+    let num1 = Math.floor(Math.random() * 10) + 1;
+    let num2 = Math.floor(Math.random() * 10) + 1;
+    // On s'assure que le résultat d'une soustraction ne soit pas négatif
+    if (num1 < num2) { let temp = num1; num1 = num2; num2 = temp; }
+    
+    const operations = ['+', '-'];
+    let op = operations[Math.floor(Math.random() * operations.length)];
+    let reponseCorrecte = (op === '+') ? (num1 + num2) : (num1 - num2);
+    
+    // On crée 3 choix (dont 1 correct)
+    let choix = [reponseCorrecte];
+    while(choix.length < 3) {
+        let fauxChoix = reponseCorrecte + Math.floor(Math.random() * 5) - 2;
+        if (fauxChoix !== reponseCorrecte && fauxChoix >= 0 && !choix.includes(fauxChoix)) {
+            choix.push(fauxChoix);
+        }
+    }
+    // On mélange les choix
+    choix.sort(() => Math.random() - 0.5);
+
+    let htmlChoix = choix.map(c => `
+        <button onclick="window.verifierMaths(${c}, ${reponseCorrecte})" style="background: var(--accent); color: white; border: none; padding: 15px 30px; font-size: 1.5em; border-radius: 10px; cursor: pointer; margin: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.2);">
+            ${c}
+        </button>
+    `).join('');
+
+    mathContainer.innerHTML = `
+        <div style="background: #fff; padding: 30px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); max-width: 500px; margin: 0 auto;">
+            <h3 style="color: var(--gold); font-family: 'Fredoka One', cursive; font-size: 1.8em; margin-bottom: 5px;">Défi Concentration 🧠</h3>
+            <p style="color: #666; margin-bottom: 20px;">Résous ce petit calcul pour relancer ton cerveau et gagner 5 pièces !</p>
+            <div style="font-size: 3em; font-weight: bold; margin-bottom: 30px; color: #333;">
+                ${num1} ${op} ${num2} = ?
+            </div>
+            <div style="display: flex; justify-content: center; flex-wrap: wrap;">
+                ${htmlChoix}
+            </div>
+            <p id="msg-maths" style="font-weight: bold; font-size: 1.2em; margin-top: 20px; height: 30px;"></p>
+        </div>
+    `;
+};
+
+window.verifierMaths = (choix, reponseCorrecte) => {
+    const msgElement = document.getElementById('msg-maths');
+    if (choix === reponseCorrecte) {
+        if (typeof confetti !== "undefined") confetti({ particleCount: 50, spread: 50, origin: { y: 0.7 } });
+        msgElement.innerText = "Bravo ! C'est la bonne réponse ! (+5 💰)";
+        msgElement.style.color = "var(--success)";
+        window.state.coins += 5;
+        window.updateHud();
+        // On génère un nouvel exercice après 2 secondes
+        setTimeout(() => { window.genererExerciceMaths(); }, 2000);
+    } else {
+        msgElement.innerText = "Oups ! Essaie encore !";
+        msgElement.style.color = "var(--error)";
+        try { document.getElementById('sfx-fail').play(); } catch (e) {}
+    }
+};
+
+window.lireTout=()=>{
+    if(window.isReading)return;
+    if(window.phrases.length>0){
+        const elCinema=document.getElementById('cb-auto-cinema');
+        if(elCinema&&elCinema.checked&&!window.isCinemaMode){
+            window.toggleCinemaMode();
+        }
+        
+        // 🧹 NOUVEAU : Réinitialisation totale des statistiques au lancement !
+        window.totalBlinks = 0;
+        window.attentionPauses = 0;
+        window.distractionBuffer = 0;
+        window.framesBaillement = 0;
+        window.comboCount = 0;
+        window.sessionHeatmap = {}; // Remet la carte de chaleur à zéro
+        if(window.state) window.state.startTime = Date.now(); // Chrono à zéro
+        
+        // 🧹 Mise à jour de l'affichage visuel (HUD)
+        if(document.getElementById('kpi-blinks')) document.getElementById('kpi-blinks').innerText = "0";
+        if(document.getElementById('kpi-distraction')) document.getElementById('kpi-distraction').innerText = "0";
+        if(document.getElementById('combo-badge')) document.getElementById('combo-badge').style.display = 'none';
+
+        window.audioPlayer.play().catch(e=>{});
+        window.audioPlayer.pause();
+        window.isSequenceMode=true;
+        window.idx=0;
+        window.jouerPhrase(window.phrases[0]);
+    }
+};
+
+window.jouerPhrase=(span)=>{
+    if(!span)return;
+    window.isReading=true;window.isPaused=false;window.audioPlayer.pause();speechSynthesis.cancel();clearInterval(window.timerKaraoke);
+    document.querySelectorAll('.highlight-mot').forEach(e=>e.classList.remove('highlight-mot'));
+    document.querySelectorAll('.phrase.active').forEach(e=>e.classList.remove('active'));
+    
+    span.classList.add('active');
+    span.scrollIntoView({behavior:"smooth",block:"center"});
+
+    const premierMot = span.querySelector('.mot-cliquable') || span;
+    const rect = premierMot.getBoundingClientRect();
+    
+    let tailleTexte = parseInt(document.getElementById('slider-taille').value) || 40;
+    let decalageBas = tailleTexte * 0.90; // 👈 CORRECTION ICI
+
+    document.documentElement.style.setProperty('--spot-x',(rect.left+rect.width/2)+'px');
+    document.documentElement.style.setProperty('--spot-y',(rect.top+rect.height/2 + decalageBas)+'px');
+    
+    const line = document.getElementById('focus-line');
+    if(line && line.style.display === 'block') {
+        let offsetH = line.offsetHeight || 30;
+        line.style.top = (rect.top + (rect.height / 2) - (offsetH / 2) + decalageBas) + "px";
+    }
+
+    const motsCaches=span.querySelectorAll('.mot-cliquable.masked');
+    
+    if(motsCaches.length>0){
+        document.getElementById('status').innerText="🤫 Chut... Mystère !";
+        const tousLesMots=Array.from(span.querySelectorAll('.mot-cliquable'));
+        window.jouerSequenceSpeciale(tousLesMots,0,span);
+    }else{
+        document.getElementById('status').innerText="Chargement...";
+        // On nettoie les symboles ET les slashs du mode syllabe avant d'envoyer à la voix
+        let textePropre = span.innerText.replace(/[🛑⏱️\/]/g, '').replace(/\s+/g, ' ').trim();
+        google.script.run.withSuccessHandler(b64=>{
+            if(!b64||b64==="ERREUR"){
+                let u=new SpeechSynthesisUtterance(textePropre);
+                u.lang=(window.currentLang==='fr')?'fr-FR':'ar-SA';
+                u.rate=parseFloat(document.getElementById('slider-vitesse').value);
+                let motsTotal=textePropre.split(" ").length;let dureeEst=motsTotal*0.4;
+                u.onstart=()=>window.simulerKaraoke(span,dureeEst,true);
+                let nextFired=false;
+                let passerSuite=()=>{if(nextFired)return;nextFired=true;window.state.coins+=1;window.updateHud();if(window.isSequenceMode)window.passerAuSuivant();else window.stopAudio(false);};
+                u.onend=passerSuite;u.onerror=passerSuite;
+                setTimeout(()=>speechSynthesis.speak(u),10);
+                return;
+            }
+            if(!window.isReading)return;
+            window.audioPlayer.src="data:audio/mp3;base64,"+b64;
+            window.audioPlayer.playbackRate=parseFloat(document.getElementById('slider-vitesse').value);
+            window.audioPlayer.onerror=()=>{if(window.isSequenceMode)window.passerAuSuivant();};
+            window.audioPlayer.onloadedmetadata=()=>{window.simulerKaraoke(span,window.audioPlayer.duration,false);window.audioPlayer.play();document.getElementById('status').innerText="Lecture...";};
+            window.audioPlayer.onended=()=>{window.state.coins+=1;window.updateHud();if(window.isSequenceMode)window.passerAuSuivant();else window.stopAudio(false);};
+        }).getAudioProxy(textePropre,window.currentLang);
+    }
+};
+window.jouerSequenceSpeciale=(mots,index,spanParent)=>{if(!window.isReading)return;if(index>=mots.length){window.state.coins+=2;window.updateHud();if(window.isSequenceMode)window.passerAuSuivant();else window.stopAudio(false);return;}const motActuel=mots[index];const estCache=motActuel.classList.contains('masked');const texteMot=motActuel.innerText.replace(/[🛑⏱️]/g,'').trim();document.querySelectorAll('.highlight-mot').forEach(e=>e.classList.remove('highlight-mot'));motActuel.classList.add('highlight-mot');motActuel.scrollIntoView({behavior:"smooth",block:"center",inline:"center"});google.script.run.withSuccessHandler(b64=>{if(!window.isReading)return;const audioMot=new Audio("data:audio/mp3;base64,"+b64);audioMot.playbackRate=parseFloat(document.getElementById('slider-vitesse').value);if(estCache){motActuel.classList.remove('masked');motActuel.style.color="#d63033";document.getElementById('status').innerText="✨ Découverte !";audioMot.play();audioMot.onended=()=>{setTimeout(()=>{if(!window.isReading)return;let audioRepet=new Audio("data:audio/mp3;base64,"+b64);audioRepet.playbackRate=audioMot.playbackRate;motActuel.style.color="#00b894";motActuel.style.transform="scale(1.3)";motActuel.style.transition="all 0.3s";audioRepet.play();audioRepet.onended=()=>{motActuel.style.color="";motActuel.style.transform="scale(1)";window.jouerSequenceSpeciale(mots,index+1,spanParent);};},800);};}else{audioMot.play();audioMot.onended=()=>{window.jouerSequenceSpeciale(mots,index+1,spanParent);};}}).getAudioProxy(texteMot,window.currentLang);};
+
+window.passerAuSuivant=()=>{
+    window.idx++;
+    let pct=(window.idx/window.phrases.length)*100;
+    
+    if(document.getElementById('progress-bar'))document.getElementById('progress-bar').style.width=pct+"%";
+    
+    if(window.idx<window.phrases.length){
+        setTimeout(()=>{if(window.isReading&&window.isSequenceMode)window.jouerPhrase(window.phrases[window.idx]);},500);
+    }else{
+        if(document.getElementById('progress-bar'))document.getElementById('progress-bar').style.width="100%";
+        window.finishSession();
+    }
+};
+
+window.lireMot=(mot)=>{window.stopAudio(false);let cleanMot=mot.trim().replace(/[🛑⏱️]/g,'');if(!window.sessionHeatmap[cleanMot])window.sessionHeatmap[cleanMot]=0;window.sessionHeatmap[cleanMot]++;let titreLecon=window.lecons[document.getElementById('choix-lecon').value]?.titre||"Inconnue";google.script.run.enregistrerMotDifficile(window.state.nom,window.state.matricule,cleanMot,titreLecon);const el=event.target;if(el){el.style.color="var(--error)";setTimeout(()=>{el.style.color="";},1000);}google.script.run.withSuccessHandler(b64=>{if(b64&&b64!=="ERREUR")new Audio("data:audio/mp3;base64,"+b64).play();}).getAudioProxy(cleanMot,window.currentLang);};
+window.finishSession=()=>{window.stopAudio(true);let time=Math.floor((Date.now()-window.state.startTime)/1000);let idLecon=document.getElementById('choix-lecon').value;let titreLecon=window.lecons[idLecon]?window.lecons[idLecon].titre:"Lecture";let xpG=Math.floor(time*(window.comboCount||1));window.currentXP+=xpG;localStorage.setItem('lunoo_xp',window.currentXP);if(window.updateXPBar)window.updateXPBar();let jsonHeatmap=JSON.stringify(window.sessionHeatmap);try{google.script.run.enregistrerBilanLecture(window.state.nom,window.state.matricule,titreLecon,time,window.totalBlinks,window.attentionPauses,jsonHeatmap);}catch(e){}const caseBilan=document.getElementById('cb-show-kpi');const caseRester=document.getElementById('cb-stay-page');if(caseBilan&&caseBilan.checked===true){try{document.getElementById('sfx-win').play();}catch(e){}if(typeof confetti!=="undefined")confetti({particleCount:150,spread:70});document.getElementById('app-interface').style.display='none';document.getElementById('kpi-modal').style.display='flex';document.getElementById('kpi-student-name').innerText=window.state.nom||"Élève";document.getElementById('kpi-student-mat').innerText=window.state.matricule||"--";document.getElementById('kpi-val-time').innerText=time+"s";document.getElementById('kpi-val-coins').innerText="+"+window.state.coins;document.getElementById('kpi-val-blinks').innerText=window.totalBlinks;document.getElementById('kpi-val-dist').innerText=window.attentionPauses;// --- APPEL DU COACH GEMINI ---
+document.getElementById('kpi-ai-comment').innerText="🤖 المدرب الذكي يحلل قراءتك... (Le coach analyse ta lecture...)";
+
+// On passe toutes les infos de la session (nom, temps, erreurs, heatmap et pièces)
+google.script.run.withSuccessHandler(resultat => {
+    // 1. On affiche le texte du Coach
+    document.getElementById('kpi-ai-comment').innerText = resultat.message;
+    
+    // 2. Le Coach parle à voix haute !
+    let u = new SpeechSynthesisUtterance(resultat.message);
+    u.lang = 'ar-SA';
+    speechSynthesis.speak(u);
+    
+}).genererBilanGemini(window.state.nom || "يا بطل", time, window.totalBlinks, window.attentionPauses, jsonHeatmap, window.state.coins);}else{try{document.getElementById('sfx-win').play();}catch(e){}if(caseRester&&caseRester.checked===true){alert(`✅ Lecture terminée !\n💰 Pièces gagnées : ${window.state.coins}`);document.getElementById('progress-bar').style.width="0%";document.getElementById('status').innerText="Prêt";window.scrollTo(0,0);}else{setTimeout(()=>{alert(`✅ Lecture terminée !\n💰 Pièces gagnées : ${window.state.coins}`);window.goHome();},100);}}};
+window.closeKpi=()=>{document.getElementById('kpi-modal').style.display='none';const elStay=document.getElementById('cb-stay-page');const resterSurPage=elStay?elStay.checked:false;if(resterSurPage){document.getElementById('app-interface').style.display='flex';document.getElementById('progress-bar').style.width="0%";document.getElementById('status').innerText="Prêt";window.scrollTo(0,0);}else{window.goHome();}};
+window.tryLogin=()=>{const u=document.getElementById('input-name').value.trim();const p=document.getElementById('input-pass').value.trim();if(!u||!p){window.showMsg("Remplissez tout !","red");return;}if(window.listeUtilisateurs.length===0){window.showMsg("⏳ Chargement...","orange");return;}let compteTrouve=false;for(let i=1;i<window.listeUtilisateurs.length;i++){if(String(window.listeUtilisateurs[i][1]).trim().toLowerCase()===u.toLowerCase()&&String(window.listeUtilisateurs[i][2]).trim()===p){compteTrouve=true;break;}}if(compteTrouve){window.showMsg("✅ Connexion réussie !","green");window.startGame(u);}else{window.showMsg("❌ Compte introuvable.","red");}};
+window.tryRegister=()=>{const u=document.getElementById('input-name').value.trim();const p=document.getElementById('input-pass').value.trim();if(!u||!p){window.showMsg("Remplissez tout !","red");return;}window.showMsg("Inscription...","yellow");google.script.run.withSuccessHandler(res=>{if(res==="SUCCESS")window.showMsg("Inscrit ! Connectez-vous.","green");else window.showMsg("Erreur/Existe déjà","orange");}).inscrireUtilisateur(u,p);};
+window.startGame=(nomUser)=>{window.state.nom=nomUser||"Invité";document.getElementById('input-student-name').value=window.state.nom;document.body.classList.add('reading-mode');window.loadSettings();google.script.run.withSuccessHandler(cfg=>{if(cfg){window.settings.blink=(cfg.yeux||50)/100;window.settings.dist=parseInt(cfg.dist||20);if(document.getElementById('slider-seuil'))document.getElementById('slider-seuil').value=cfg.yeux||50;if(document.getElementById('slider-distraction'))document.getElementById('slider-distraction').value=cfg.dist||20;if(document.getElementById('seuil-display'))document.getElementById('seuil-display').innerText=(cfg.yeux||50)+"%";if(document.getElementById('dist-display'))document.getElementById('dist-display').innerText=cfg.dist||20;localStorage.setItem('lunoo_blink',cfg.yeux);localStorage.setItem('lunoo_dist',cfg.dist);}}).recupererReglage(window.state.nom);document.getElementById('home-screen').style.display='none';document.getElementById('app-interface').style.display='flex';window.state.startTime=Date.now();if(!window.isCalibratedThisSession){document.getElementById('checklist-modal').style.display='flex';}google.script.run.withSuccessHandler(data=>{window.lecons=data||[];if(window.lecons.length===0)window.lecons=[{titre:"Leçon Démo",texte:"مرحبا بكم dans Lunoo."}];let s=document.getElementById('choix-lecon');s.innerHTML="";window.lecons.forEach((l,i)=>{let o=document.createElement('option');o.value=i;o.innerText=l.titre||l[1]||"Leçon "+(i+1);s.appendChild(o);});window.changerLecon();}).getDonneesLivre("1");};
+window.closeChecklistAndCalibrate=()=>{document.getElementById('checklist-modal').style.display='none';window.showCalibration();};
+window.updateIdentity=()=>{window.state.nom=document.getElementById('input-student-name').value;window.state.matricule=document.getElementById('input-matricule').value;};
+window.goHome=()=>{
+    window.stopAudio(true);
+    document.body.classList.remove('reading-mode','dark-mode','sepia-mode','immersive-active','attention-lost','tunnel-active');
+    document.getElementById('app-interface').style.display='none';
+    document.getElementById('kpi-modal').style.display='none';
+    document.getElementById('checklist-modal').style.display='none';
+    document.getElementById('home-screen').style.display='flex';
+    
+    // 🧹 NOUVEAU : On range la règle de lecture en quittant la page !
+    const regle = document.getElementById('focus-line');
+    if(regle) regle.style.display = 'none';
+    const btnFocus = document.getElementById('btn-focus');
+    if(btnFocus) btnFocus.classList.remove('active');
+    window.isRulerFixed = false; // On libère la règle au passage
+
+    if(document.fullscreenElement)document.exitFullscreen();
+};
+window.showCalibration=()=>{document.getElementById('calibration-modal').style.display='flex';window.startCam(document.getElementById('calib-video'),true);window.updateMascotSVG();};
+window.closeCalibration=()=>{let sY=document.getElementById('slider-seuil').value;let sD=document.getElementById('slider-distraction').value;localStorage.setItem('lunoo_blink',sY);localStorage.setItem('lunoo_dist',sD);google.script.run.sauvegarderReglage(window.state.nom||"Global",sY,sD);window.settings.blink=sY/100;window.settings.dist=parseInt(sD);document.getElementById('calibration-modal').style.display='none';window.isCalibratedThisSession=true;if(window.calibStream){window.calibStream.getTracks().forEach(track=>track.stop());window.calibStream=null;}if(!window.camActiveUser)window.webcamRunning=false;};
+window.showAdmin=()=>{document.getElementById('admin-modal').style.display='flex';};
+window.checkAdmin = () => {
+    let u = document.getElementById('admin-user').value.trim();
+    let p = document.getElementById('admin-pass').value.trim();
+    let estAdmin = false;
+    
+    for (let i = 1; i < window.listeUtilisateurs.length; i++) {
+        if (String(window.listeUtilisateurs[i][0]).trim() === "Admin" && String(window.listeUtilisateurs[i][1]).trim() === u && String(window.listeUtilisateurs[i][2]).trim() === p) {
+            estAdmin = true;
+            break;
+        }
+    }
+    
+    if (estAdmin) {
+        document.getElementById('admin-modal').style.display = 'none';
+        document.getElementById('admin-screen').style.display = 'block';
+        
+        google.script.run.withSuccessHandler(d => {
+            let tbody = document.querySelector('#lesson-table tbody');
+            if (tbody) {
+                tbody.innerHTML = "";
+                d.slice(1).forEach(r => {
+                    let row = tbody.insertRow();
+                    for (let col = 0; col < 9; col++) {
+                        let cell = row.insertCell();
+                        cell.style.border = "1px solid #ddd";
+                        cell.style.padding = "10px";
+                        cell.style.textAlign = "right";
+                        
+                        // Si c'est la colonne du TEXTE (Index 3)
+                        if (col === 3) {
+                            let texteEntier = r[col] ? r[col].toString().replace(/`/g, "'") : "";
+                            let texteCoupe = texteEntier.length > 40 ? texteEntier.substring(0, 40) + "..." : texteEntier;
+                            
+                            // On ajoute le texte ET le bouton magique pour l'éditeur !
+                            cell.innerHTML = `
+                                <div style="margin-bottom: 8px; color: #555;" title="${texteEntier}">${texteCoupe}</div>
+                                <button onclick="window.chargerEditeurVisuel('${r[1]}', \`${texteEntier}\`)" style="background: var(--accent); color: white; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+                                    🪄 Créer Cache-Cache
+                                </button>
+                            `;
+                            cell.style.maxWidth = "250px";
+                        } else {
+                            // Pour les autres colonnes
+                            cell.innerText = r[col] !== undefined ? r[col] : "";
+                            if (col === 4 || col === 5) {
+                                cell.style.maxWidth = "250px";
+                                cell.style.overflow = "hidden";
+                                cell.style.textOverflow = "ellipsis";
+                                cell.style.whiteSpace = "nowrap";
+                                cell.title = r[col] !== undefined ? r[col] : "";
+                            }
+                        }
+                    }
+                });
+            }
+        }).getAllLessonsForAdmin();
+    } else {
+        alert("Identifiant ou mot de passe incorrect.");
+    }
+};
+window.fermerAdmin=()=>{document.getElementById('admin-screen').style.display='none';document.getElementById('home-screen').style.display='flex';let passInput=document.getElementById('admin-pass');if(passInput)passInput.value='';};
+window.chargerHistoriqueEleve=()=>{let nom=document.getElementById('admin-search-student').value;if(!nom)return alert("Entrez un nom !");document.getElementById('heatmap-sessions-list').innerHTML="Chargement...";google.script.run.withSuccessHandler(sessions=>{let container=document.getElementById('heatmap-sessions-list');container.innerHTML="";if(sessions.length===0){container.innerHTML="Aucune session trouvée.";return;}sessions.forEach((s,idx)=>{let div=document.createElement('div');let d=new Date(s.date);let dateStr=d.toLocaleDateString()+' '+d.toLocaleTimeString();div.innerHTML=`<strong>${dateStr}</strong><br><small>${s.titre}</small>`;div.style.padding="10px";div.style.borderBottom="1px solid #eee";div.style.cursor="pointer";div.onmouseover=()=>div.style.background="#f0f0f0";div.onmouseout=()=>div.style.background="white";div.onclick=()=>window.afficherHeatmapSession(s);container.appendChild(div);});}).getHistoriqueEleve(nom);};
+window.afficherHeatmapSession=(sessionData)=>{let viewer=document.getElementById('heatmap-visualizer');viewer.innerHTML="Reconstruction du texte...";google.script.run.withSuccessHandler(texteOriginal=>{if(!texteOriginal){viewer.innerHTML="Erreur: Texte original introuvable.";return;}let mapDonnees={};try{mapDonnees=JSON.parse(sessionData.heatmap);}catch(e){console.log("Pas de heatmap");}let htmlBuild="";let mots=texteOriginal.split(" ");mots.forEach(mot=>{let clean=mot.trim();let clics=mapDonnees[clean]||0;let classeCSS="heat-low";let info="Fluide";if(clics>=1&&clics<=2){classeCSS="heat-med";info=clics+" hésitations";}if(clics>2){classeCSS="heat-high";info=clics+" blocages !";}htmlBuild+=`<span class="heatmap-word ${classeCSS}" title="${info}">${mot}</span> `;});viewer.innerHTML=htmlBuild;}).getTexteParTitre(sessionData.titre);};
+window.lancerQuizz=()=>{const i=document.getElementById('choix-lecon').value;const l=window.lecons[i];const container=document.getElementById('quizz-container');const modal=document.getElementById('quizz-modal');if(!l.q_question||l.q_question.trim()===""||!modal){window.finishSession();return;}container.innerHTML=`<div class="quizz-question" style="text-align:right; direction:rtl;"><p style="font-weight:bold; font-size:1.3em; margin-bottom:20px;">${l.q_question}</p><label style="display:block; background:#f8f9fa; padding:15px; margin:10px 0; border-radius:12px; cursor:pointer; border:2px solid #eee;" id="label-opt1"><input type="radio" name="quizz-opt" value="${l.q_choix1}">${l.q_choix1}</label><label style="display:block; background:#f8f9fa; padding:15px; margin:10px 0; border-radius:12px; cursor:pointer; border:2px solid #eee;" id="label-opt2"><input type="radio" name="quizz-opt" value="${l.q_choix2}">${l.q_choix2}</label></div>`;modal.style.display='flex';};
+window.chargerEditeurVisuel=(idLecon,texteActuel)=>{window.currentLessonIdEditing=idLecon;const container=document.getElementById('visual-editor-container');container.innerHTML="";const mots=texteActuel.split(/(\s+)/);mots.forEach(segment=>{if(segment.trim().length===0){container.appendChild(document.createTextNode(segment));return;}let span=document.createElement('span');span.className="editor-word";let cleanWord=segment;if(segment.startsWith("{")&&segment.endsWith("}")){cleanWord=segment.slice(1,-1);span.classList.add('is-hidden');span.setAttribute('data-state','hidden');}else{span.classList.add('is-visible');span.setAttribute('data-state','visible');}span.innerText=cleanWord;span.addEventListener('mousedown',(e)=>{const modePaint=document.getElementById('cb-mode-paint').checked;if(!modePaint)return;e.preventDefault();window.isDrawing=true;window.toggleWordState(span);});span.addEventListener('mouseenter',(e)=>{const modePaint=document.getElementById('cb-mode-paint').checked;if(window.isDrawing&&modePaint){window.toggleWordState(span);}});container.appendChild(span);});document.getElementById('visual-editor-container').scrollIntoView({behavior:"smooth"});};
+window.toggleWordState=(element)=>{if(element.classList.contains('is-hidden')){element.classList.remove('is-hidden');element.classList.add('is-visible');element.setAttribute('data-state','visible');}else{element.classList.remove('is-visible');element.classList.add('is-hidden');element.setAttribute('data-state','hidden');}};
+window.sauvegarderMotsCaches=()=>{if(!window.currentLessonIdEditing)return alert("Aucune leçon sélectionnée !");const container=document.getElementById('visual-editor-container');let nouveauTexte="";container.childNodes.forEach(node=>{if(node.nodeType===3){nouveauTexte+=node.nodeValue;}else if(node.tagName==="SPAN"){let mot=node.innerText;let isHidden=node.classList.contains('is-hidden');if(isHidden){nouveauTexte+="{"+mot+"}";}else{nouveauTexte+=mot;}}});google.script.run.withSuccessHandler(()=>{alert("✅ Texte mis à jour !");}).updateLessonTextOnly(window.currentLessonIdEditing,nouveauTexte);};
+window.ouvrirMonDrive=()=>{alert("Recherche ou Création de votre dossier sécurisé en cours...\nCela peut prendre 5 à 10 secondes.");google.script.run.withSuccessHandler(url=>{if(url){window.open(url,'_blank');}else{alert("Erreur lors de la création du fichier.");}}).initProfDrive();};
+window.verifierQuizz=()=>{const i=document.getElementById('choix-lecon').value;const l=window.lecons[i];const selected=document.querySelector('input[name="quizz-opt"]:checked');if(!selected){alert("Veuillez choisir une réponse !");return;}if(selected.value.trim()===l.q_reponse.toString().trim()){if(typeof confetti!=="undefined")confetti({particleCount:100,spread:70,origin:{y:0.6}});alert("Excellent ! Bonne réponse. (+20 💰)");window.state.coins+=20;window.updateHud();}else{alert("Dommage ! La bonne réponse était : "+l.q_reponse);}const modal=document.getElementById('quizz-modal');if(modal)modal.style.display='none';window.finishSession();};
+window.tenterDevinerMot=(elementDom,motCible)=>{if(!('webkitSpeechRecognition' in window)){alert("Navigateur non supporté.");elementDom.classList.add('revealed');return;}window.stopAudio(true);elementDom.classList.add('listening');document.getElementById('status').innerText="🎤 Dis le mot : "+motCible;window.recognition=new webkitSpeechRecognition();window.recognition.lang=window.currentLang==='ar'?'ar-SA':'fr-FR';window.recognition.interimResults=false;window.recognition.maxAlternatives=3;window.recognition.onresult=(event)=>{let entendu=event.results[0][0].transcript.trim();let cleanEntendu=entendu.replace(/[^\u0600-\u06FF]/g,'');let cleanCible=motCible.replace(/[^\u0600-\u06FF]/g,'');if(cleanEntendu.includes(cleanCible)||cleanCible.includes(cleanEntendu)){elementDom.classList.remove('listening');elementDom.classList.add('revealed');window.lancerSpectateurs();window.state.coins+=10;window.updateHud();document.getElementById('status').innerText="✅ Bravo !";}else{elementDom.classList.remove('listening');elementDom.classList.add('error');document.getElementById('status').innerText="❌ Pas tout à fait... ("+entendu+")";try{document.getElementById('sfx-fail').play();}catch(e){}setTimeout(()=>{elementDom.classList.remove('error');},1000);}};window.recognition.onerror=(e)=>{elementDom.classList.remove('listening');alert("Erreur micro : "+e.error);};window.recognition.onend=()=>{elementDom.classList.remove('listening');};window.recognition.start();};
+window.lancerSpectateurs=()=>{const crowd=document.getElementById('crowd-container');const audio=document.getElementById('sfx-cheer');if(audio){audio.currentTime=0;audio.volume=0.5;audio.play().catch(e=>console.log(e));}crowd.innerHTML="";crowd.style.display="flex";const emojis=['👏','🥳','🦁','✨','🕺','🎓'];for(let i=0;i<15;i++){let span=document.createElement('span');span.className="spectator";span.innerText=emojis[Math.floor(Math.random()*emojis.length)];span.style.animationDelay=(Math.random()*0.5)+"s";crowd.appendChild(span);}setTimeout(()=>{crowd.style.display="none";},3500);};
+window.toggleRecord=()=>{const btn=document.getElementById('btn-record');if(!window.isRecording){navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{window.mediaRecorder=new MediaRecorder(s);window.audioChunks=[];window.mediaRecorder.start();window.isRecording=true;btn.classList.add('recording-active');document.getElementById('status').innerText="🔴 Enregistrement...";window.mediaRecorder.ondataavailable=e=>window.audioChunks.push(e.data);window.mediaRecorder.onstop=()=>{const audioBlob=new Blob(window.audioChunks,{type:'audio/mp3'});const audioUrl=URL.createObjectURL(audioBlob);(new Audio(audioUrl)).play();document.getElementById('status').innerText="🔊 Réécoute...";};}).catch(err=>{alert("Microphone refusé.");});}else{if(window.mediaRecorder)window.mediaRecorder.stop();window.isRecording=false;btn.classList.remove('recording-active');}};
+
+window.startCoachIA=()=>{
+    if(!window.phrases||window.phrases.length===0){alert("Sélectionne d'abord une leçon !");return;}
+    speechSynthesis.cancel();
+    window.audioPlayer.pause();
+    window.isReading=true;
+    window.isCoachMode=true; 
+    let phraseActive=window.phrases[window.idx];
+    if(!phraseActive){ window.finishSession(); return; }
+    document.querySelectorAll('.phrase.active').forEach(e=>e.classList.remove('active'));
+    phraseActive.classList.add('active');
+    phraseActive.scrollIntoView({behavior:"smooth",block:"center"});
+    let motsElements=phraseActive.querySelectorAll('.mot-cliquable');
+    let texteCible=Array.from(motsElements).map(el=>el.innerText.replace(/[🛑⏱️]/g,'').trim()).join(' ');
+    const btn=document.querySelector('button[onclick="window.startCoachIA()"]');
+    if(btn)btn.classList.add('active');
+    document.getElementById('status').innerText="🤖 Le Coach te parle...";
+    if(window.idx === 0) {
+        let introText=window.currentLang==='ar'?"مرحباً يا بطل! استمع جيداً ثم اقرأ معي.":"Bonjour ! Écoute bien, puis répète.";
+        let utteranceIntro=new SpeechSynthesisUtterance(introText);
+        utteranceIntro.lang=window.currentLang==='ar'?'ar-SA':'fr-FR';
+        utteranceIntro.rate=0.9;
+        speechSynthesis.speak(utteranceIntro);
+        setTimeout(()=>{ if(window.isCoachMode) window.lancerVoixCoach(texteCible, phraseActive, btn); }, 3500);
+    } else {
+        setTimeout(()=>{ if(window.isCoachMode) window.lancerVoixCoach(texteCible, phraseActive, btn); }, 1000);
+    }
+};
+
+window.lancerVoixCoach=(texteCible, phraseActive, btn)=>{
+    if(!window.isCoachMode) return;
+    google.script.run.withSuccessHandler(b64=>{
+        if(!window.isCoachMode) return;
+        if(b64 && b64 !== "ERREUR"){
+            window.audioPlayer.src = "data:audio/mp3;base64," + b64;
+            window.audioPlayer.playbackRate = parseFloat(document.getElementById('slider-vitesse').value);
+            if(!window.isPaused) { window.audioPlayer.play().catch(e=>{}); }
+            window.audioPlayer.onended = () => window.activerMicroPourCoach(phraseActive, texteCible, btn);
+        } else {
+            let uttPhrase=new SpeechSynthesisUtterance(texteCible);
+            uttPhrase.lang=window.currentLang==='ar'?'ar-SA':'fr-FR';
+            speechSynthesis.speak(uttPhrase);
+            let dureeEstimee = (texteCible.split(' ').length * 600) + 1000;
+            setTimeout(()=> { if(window.isCoachMode) window.activerMicroPourCoach(phraseActive,texteCible,btn); }, dureeEstimee);
+        }
+    }).getAudioProxy(texteCible,window.currentLang);
+};
+
+window.activerMicroPourCoach=(phraseActive,texteCible,btn)=>{
+    if(!window.isCoachMode) return;
+    if(!('webkitSpeechRecognition' in window)){alert("Ton navigateur ne supporte pas le micro.");if(btn)btn.classList.remove('active');return;}
+    window.recognition=new webkitSpeechRecognition();
+    window.recognition.lang=window.currentLang==='ar'?'ar-SA':'fr-FR';
+    window.recognition.interimResults=false;
+    window.recognition.maxAlternatives=1;
+    if(btn)btn.classList.add('voice-listening');
+    document.getElementById('status').innerText="🎤 À ton tour ! Parle maintenant.";
+    window.recognition.onresult=(event)=>{
+        if(!window.isCoachMode) return;
+        let texteEntendu=event.results[0][0].transcript.trim();
+        
+        // 🧠 INTÉGRATION DE L'IA ANTI-DYSLEXIE
+        if (window.detecterInversion(texteCible, texteEntendu)) {
+            phraseActive.classList.add('echo-fail');
+            document.getElementById('status').innerText="🔄 Attention, tu as inversé des lettres ! Regarde bien l'ordre.";
+            let msg = window.currentLang === 'ar' ? "انتبه، لقد عكست بعض الحروف!" : "Attention, tu as inversé des lettres !";
+            let utt = new SpeechSynthesisUtterance(msg);
+            utt.lang = window.currentLang === 'ar' ? 'ar-SA' : 'fr-FR';
+            speechSynthesis.speak(utt);
+            setTimeout(()=>{
+                phraseActive.classList.remove('echo-fail');
+                if(window.isCoachMode) window.activerMicroPourCoach(phraseActive, texteCible, btn);
+            }, 3500);
+            return;
+        }
+
+        let score=window.calculerSimilitude(texteEntendu,texteCible);
+        if(score>40){
+            phraseActive.classList.add('echo-success');
+            document.getElementById('status').innerText="✅ Excellent ! ("+Math.round(score)+"%)";
+            let msg=window.currentLang==='ar'?"أحسنت!":"Bravo !";
+            let uttBravo=new SpeechSynthesisUtterance(msg);
+            uttBravo.lang=window.currentLang==='ar'?'ar-SA':'fr-FR';
+            speechSynthesis.speak(uttBravo);
+            if(typeof confetti!=="undefined")confetti({particleCount:50,spread:40});
+            window.state.coins+=10; window.updateHud();
+            setTimeout(()=>{
+                phraseActive.classList.remove('echo-success');
+                if(!window.isCoachMode) return;
+                window.idx++; window.startCoachIA(); 
+            }, 2500);
+        }else{
+            phraseActive.classList.add('echo-fail');
+            document.getElementById('status').innerText="⚠️ Presque ! ("+Math.round(score)+"%)";
+            let msg=window.currentLang==='ar'?"حاول مرة أخرى.":"Presque ! Essaie encore.";
+            let uttEffort=new SpeechSynthesisUtterance(msg);
+            uttEffort.lang=window.currentLang==='ar'?'ar-SA':'fr-FR';
+            speechSynthesis.speak(uttEffort);
+            setTimeout(()=>{
+                phraseActive.classList.remove('echo-fail');
+                if(window.isCoachMode) window.activerMicroPourCoach(phraseActive,texteCible,btn);
+            }, 2500);
+        }
+    };
+    window.recognition.onend=()=>{if(btn){btn.classList.remove('voice-listening');}if(document.getElementById('status').innerText==="🎤 À ton tour ! Parle maintenant."){document.getElementById('status').innerText="😴 Je n'ai rien entendu... Clique sur le micro pour réessayer.";}};
+    window.recognition.onerror=(event)=>{if(event.error==='aborted')return;if(btn){btn.classList.remove('voice-listening');}if(event.error==='not-allowed'){document.getElementById('status').innerText="❌ Micro bloqué !";}else{document.getElementById('status').innerText="❌ Erreur micro.";}};
+    try { window.recognition.start(); } catch(e){}
+};
+
+window.lancerModeEcho=()=>{let phraseActive=document.querySelector('.phrase.active');if(!phraseActive){alert("Sélectionne d'abord une phrase en cliquant dessus !");return;}window.stopAudio(false);const btn=document.getElementById('btn-echo');btn.classList.add('voice-listening');document.getElementById('status').innerText="👂 Écoute...";if(!('webkitSpeechRecognition' in window)){alert("Micro non supporté sur ce navigateur (utilisez Chrome).");return;}window.recognition=new webkitSpeechRecognition();window.recognition.lang=window.currentLang==='ar'?'ar-SA':'fr-FR';window.recognition.interimResults=false;window.recognition.maxAlternatives=1;window.recognition.onresult=(event)=>{let texteEntendu=event.results[0][0].transcript;let texteCible=phraseActive.innerText.replace(/[🛑⏱️]/g,'');let score=window.calculerSimilitude(texteEntendu,texteCible);if(score>40){phraseActive.classList.add('echo-success');document.getElementById('status').innerText="✅ Bravo ! ("+Math.round(score)+"%)";if(typeof confetti!=='undefined')confetti({particleCount:50,spread:40,origin:{y:0.7}});window.state.coins+=5;window.updateHud();setTimeout(()=>phraseActive.classList.remove('echo-success'),3000);}else{phraseActive.classList.add('echo-fail');document.getElementById('status').innerText="⚠️ Essaie encore...";setTimeout(()=>phraseActive.classList.remove('echo-fail'),3000);}};window.recognition.onspeechend=()=>{window.recognition.stop();btn.classList.remove('voice-listening');};window.recognition.onerror=()=>{btn.classList.remove('voice-listening');document.getElementById('status').innerText="Erreur Micro";};window.recognition.start();};
+window.toggleVoiceControl=()=>{
+    const btn=document.getElementById('btn-voice');
+    if(!('webkitSpeechRecognition' in window)){alert("Navigateur incompatible avec la commande vocale.");return;}
+    if(window.isVoiceActive){
+        window.isVoiceActive=false;
+        if(window.recognition)window.recognition.stop();
+        btn.classList.remove('voice-listening');
+        document.getElementById('status').innerText="🗣️ Vocal OFF";
+    }else{
+        window.recognition=new webkitSpeechRecognition();
+        window.recognition.continuous=true;
+        window.recognition.interimResults=false;
+        window.recognition.lang = window.currentLang === 'ar' ? 'ar-TN' : 'fr-FR';
+        window.recognition.onstart=()=>{
+            window.isVoiceActive=true;
+            btn.classList.add('voice-listening');
+            document.getElementById('status').innerText="🗣️ J'écoute tes commandes...";
+        };
+        window.recognition.onresult=(e)=>{
+            const cmd = e.results[e.results.length-1][0].transcript.trim().toLowerCase();
+            const contient = (mots) => mots.some(mot => cmd.includes(mot));
+            
+            if(contient(['leçon suivante', 'chapitre suivant', 'الدرس التالي', 'الدرس الجاي', 'اللي بعده'])){
+                let select = document.getElementById('choix-lecon');
+                if(select.selectedIndex < select.options.length - 1) {
+                    select.selectedIndex++;
+                    window.changerLecon();
+                    document.getElementById('status').innerText="📚 Leçon suivante";
+                } else { document.getElementById('status').innerText="❌ C'est la dernière leçon !"; }
+            }
+            else if(contient(['leçon précédente', 'chapitre précédent', 'الدرس السابق', 'الدرس اللي فات', 'درس فات'])){
+                let select = document.getElementById('choix-lecon');
+                if(select.selectedIndex > 0) {
+                    select.selectedIndex--;
+                    window.changerLecon();
+                    document.getElementById('status').innerText="📚 Leçon précédente";
+                } else { document.getElementById('status').innerText="❌ C'est la première leçon !"; }
+            }
+            else if(contient(['اقرا', 'أقرا', 'ابدأ', 'ابدا', 'lis', 'commence', 'play', 'خدم', 'تمشي'])){
+                window.lireTout();
+            }
+            else if(contient(['توقف', 'stop', 'arrête', 'arrete', 'قص', 'يزي', 'حبس', 'يكفي'])){
+                window.stopAudio(true);
+            }
+            else if(contient(['pause', 'لحظة', 'انتظر', 'استنى', 'أستنى', 'اصبر'])){
+                window.stopAudio(false);
+            }
+            else if(contient(['تالي', 'suivant', 'après', 'كمل', 'تقديم', 'واصل', 'زيد'])){
+                window.passerAuSuivant();
+            }
+            else if(contient(['سابق', 'رجوع', 'précédent', 'retour', 'ارجع', 'عاود'])){
+                window.stopAudio(false);
+                if(window.idx > 0) {
+                    window.idx--;
+                    if(window.phrases[window.idx]) window.jouerPhrase(window.phrases[window.idx]);
+                }
+            }
+            else if(contient(['doucement', 'lentement', 'بطيء', 'ببطء', 'بالشوية', 'بشوية', 'نقص'])){
+                let slider = document.getElementById('slider-vitesse');
+                let newSpeed = Math.max(0.5, parseFloat(slider.value) - 0.2);
+                slider.value = newSpeed;
+                window.updateSpeed(newSpeed);
+                document.getElementById('status').innerText="🐢 Vitesse réduite";
+            }
+            else if(contient(['vite', 'rapide', 'أسرع', 'اسرع', 'بسرعة', 'فيسع', 'زرب', 'ازرب'])){
+                let slider = document.getElementById('slider-vitesse');
+                let newSpeed = Math.min(1.5, parseFloat(slider.value) + 0.2);
+                slider.value = newSpeed;
+                window.updateSpeed(newSpeed);
+                document.getElementById('status').innerText="🐇 Vitesse augmentée";
+            }
+            else if(contient(['quitter', 'accueil', 'خروج', 'الرئيسية', 'اخرج', 'سكر'])){
+                window.goHome();
+            }
+        };
+        window.recognition.onend=()=>{
+            if(window.isVoiceActive){
+                setTimeout(()=>{try{window.recognition.start();}catch(err){}},300);
+            }
+        };
+        try{window.recognition.start();}catch(err){}
+    }
+};
+
+window.modeDetective=()=>{
+    const btn=document.getElementById('btn-detective');
+    if(document.querySelector('.input-trou') || (btn && btn.classList.contains('active'))){
+        if(btn) btn.classList.remove('active');
+        window.changerLecon(); 
+        document.getElementById('status').innerText="Prêt";
+        return; 
+    }
+    if(btn) btn.classList.add('active');
+    const phrases=document.querySelectorAll('.phrase');
+    let trousCrees=0;
+    phrases.forEach(phrase=>{
+        const mots=phrase.querySelectorAll('.mot-cliquable');
+        mots.forEach(motSpan=>{
+            const texteMot=motSpan.innerText.replace(/[🛑⏱️]/g,'').trim();
+            if(texteMot.length>2 && Math.random()<0.15){
+                const reponseAttendue=texteMot;
+                const input=document.createElement('input');
+                input.type="text";
+                input.className="input-trou";
+                input.placeholder="?";
+                input.autocomplete="off";
+                input.onclick=(e)=>e.stopPropagation();
+                input.oninput=(e)=>{
+                    let valeurSaisie=e.target.value.trim();
+                    if(valeurSaisie.toLowerCase()===reponseAttendue.toLowerCase()){
+                        e.target.classList.remove('error');
+                        e.target.classList.add('success');
+                        e.target.disabled=true;
+                        if(typeof confetti!=="undefined")confetti({particleCount:30,spread:50,origin:{x:e.target.getBoundingClientRect().left/window.innerWidth,y:e.target.getBoundingClientRect().top/window.innerHeight}});
+                        try{document.getElementById('sfx-win').cloneNode(true).play();}catch(err){}
+                        window.state.coins+=5; window.updateHud(); window.verifierFinDetective();
+                    }else{
+                        e.target.classList.remove('error');
+                    }
+                };
+                input.onblur=(e)=>{if(!e.target.disabled && e.target.value!==""){e.target.classList.add('error');}};
+                motSpan.innerHTML="";
+                motSpan.appendChild(input);
+                trousCrees++;
+            }
+        });
+    });
+    if(trousCrees>0){ document.getElementById('status').innerText=`🕵️‍♂️ Mission : Trouve les ${trousCrees} mots cachés !`;
+    }else{ if(btn) btn.classList.remove('active'); window.changerLecon(); alert("Pas de chance au tirage, réessaie !"); }
+};
+
+window.verifierFinDetective=()=>{const totalTrous=document.querySelectorAll('.input-trou').length;const trousReussis=document.querySelectorAll('.input-trou.success').length;document.getElementById('status').innerText=`🕵️‍♂️ Progression : ${trousReussis} / ${totalTrous}`;if(totalTrous>0&&totalTrous===trousReussis){document.getElementById('status').innerText="🏆 MISSION ACCOMPLIE !";if(typeof confetti!=="undefined")confetti({particleCount:200,spread:100});alert("Mission Détective terminée ! Tu as gagné un bonus de pièces.");window.state.coins+=20;window.updateHud();document.getElementById('btn-detective').classList.remove('active');}};
+
+document.addEventListener('mouseup',()=>{window.isDrawing=false;window.isPaintingReading=false;});
+
+// 📌 CORRECTION : GESTION DU CLIC POUR FIXER LA RÈGLE OU LA TORCHE
+document.addEventListener('click', (e) => {
+    const line = document.getElementById('focus-line');
+    const isFocusLine = line && line.style.display === 'block';
+    const isTunnel = document.body.classList.contains('tunnel-active');
+    
+    // Si la règle OU le tunnel est actif, et qu'on clique dans la zone de lecture
+    if((isTunnel || isFocusLine) && e.target.closest('#zone-lecture')) {
+        window.isRulerFixed = !window.isRulerFixed; // Alterne fixé/libéré
+        document.getElementById('status').innerText = window.isRulerFixed ? "📌 Règle épinglée (Clic pour libérer)" : "📏 Règle libérée";
+    }
+});
+
+window.onload=()=>{
+    // 💡 NOUVEAU : Vérifier si c'est la première visite
+    if(!localStorage.getItem('lunoo_deja_visite')) {
+        document.getElementById('welcome-prof-modal').style.display = 'flex';
+    }
+
+    window.loadSettings();
+    window.renderShop();
+    window.loadIA();
+    window.makeElementDraggable(document.getElementById('left-menu'));
+    window.makeElementDraggable(document.getElementById('right-menu'));
+    document.getElementById('login-msg').innerText="Chargement sécurisé...";
+    
+    google.script.run.withSuccessHandler(data=>{
+        window.listeUtilisateurs=data||[];
+        document.getElementById('login-msg').innerText="";
+    }).withFailureHandler(err=>{
+        document.getElementById('login-msg').innerText="Erreur de connexion réseau.";
+        document.getElementById('login-msg').style.color="red";
+    }).getTousLesUtilisateurs();
+    
+    let mouseReq=null;
+    
+    // 📏 CORRECTION : GESTION DE LA SOURIS SÉPARÉE
+    document.addEventListener('mousemove',(e)=>{
+        // Mouvement des yeux de la mascotte
+        document.querySelectorAll('.pupil').forEach(p=>{
+            const rect=p.getBoundingClientRect();
+            const dx=(e.clientX-rect.left-rect.width/2)/40;
+            const dy=(e.clientY-rect.top-rect.height/2)/40;
+            p.style.transform=`translate(${Math.max(-5,Math.min(5,dx))}px, ${Math.max(-5,Math.min(5,dy))}px)`;
+        });
+
+        // Seulement si on ne lit pas en automatique
+        if(!mouseReq && !window.isReading){
+            mouseReq=requestAnimationFrame(()=>{
+                const isTunnel = document.body.classList.contains('tunnel-active');
+                const line = document.getElementById('focus-line');
+                const isFocusLine = line && line.style.display === 'block';
+
+                // Si l'outil n'est pas épinglé par un clic
+                if(!window.isRulerFixed && (isTunnel || isFocusLine)) {
+                    const zoneLecture = document.getElementById('zone-lecture');
+                    if(zoneLecture) {
+                        const rect = zoneLecture.getBoundingClientRect();
+                        
+                        // Empêche de dépasser en haut et en bas du texte
+                        let clampedY = e.clientY;
+                        if(clampedY < rect.top) clampedY = rect.top;
+                        if(clampedY > rect.bottom) clampedY = rect.bottom;
+                        
+                        // Si le mode torche (tunnel) est actif
+                        if(isTunnel) {
+                            document.documentElement.style.setProperty('--spot-x', (rect.left + rect.width / 2) + 'px');
+                            document.documentElement.style.setProperty('--spot-y', clampedY + 'px');
+                        }
+                        
+                        // Si la règle de lecture est active
+                        if(isFocusLine) {
+                            // On centre la ligne sur la hauteur de la souris
+                            let offsetH = line.offsetHeight || 30;
+                            line.style.top = (clampedY - (offsetH / 2)) + "px"; 
+                            line.style.left = rect.left + "px";
+                            line.style.width = rect.width + "px";
+                        }
+                    }
+                }
+                mouseReq=null;
+            });
+        }
+        
+        // Mode Cinéma
+        if(window.isCinemaMode){
+            document.body.classList.add('ui-visible');
+            clearTimeout(window.cinemaTimer);
+            window.cinemaTimer=setTimeout(()=>{
+                document.body.classList.remove('ui-visible');
+            },3000);
+        }
+    });
+};
+window.togglePunctuation = () => { 
+    document.body.classList.toggle('hide-punctuation'); 
+    const btn = document.getElementById('btn-punctuation'); 
+    if (btn) btn.classList.toggle('active'); 
+};
+// Fonction pour fermer le message de bienvenue et s'en souvenir
+window.closeWelcomeModal = () => {
+    document.getElementById('welcome-prof-modal').style.display = 'none';
+    localStorage.setItem('lunoo_deja_visite', 'oui'); // On enregistre la visite dans le navigateur
+};
+window.changerOnglet = (idOngletCible, btnElement) => {
+    // 1. Cacher tous les contenus
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.style.display = 'none';
+    });
+    // 2. Désactiver tous les boutons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.style.background = '#eee';
+        btn.style.color = '#333';
+        btn.style.fontWeight = 'normal';
+    });
+    // 3. Afficher l'onglet cible et activer le bouton
+    document.getElementById(idOngletCible).style.display = 'block';
+    btnElement.style.background = 'var(--accent)';
+    btnElement.style.color = 'white';
+    btnElement.style.fontWeight = 'bold';
+    
+    // Si on quitte la lecture, on met en pause
+    if(idOngletCible !== 'tab-lecture') {
+        window.stopAudio(false);
+    }
+};
+// Fonction pour le Mode Cinéma
+window.toggleCinemaMode = () => {
+    window.isCinemaMode = !window.isCinemaMode;
+    if(window.isCinemaMode){
+        document.body.classList.add('cinema-mode');
+        if(document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(e=>{});
+    } else {
+        document.body.classList.remove('cinema-mode', 'ui-visible');
+        if(document.exitFullscreen && document.fullscreenElement) document.exitFullscreen();
+    }
+};
+// Fonction pour lancer le micro et parler à Gemini
+window.lancerEcouteGemini = (texteLecon, question) => {
+    const btn = document.getElementById('btn-repondre-ia');
+    const msgRetour = document.getElementById('msg-gemini-retour');
+    
+    if(!('webkitSpeechRecognition' in window)){
+        alert("متصفحك لا يدعم الميكروفون. يرجى استخدام Google Chrome!");
+        return;
+    }
+
+    window.stopAudio(true); // Coupe toute lecture en cours
+    
+    window.recognition = new webkitSpeechRecognition();
+    window.recognition.lang = window.currentLang === 'ar' ? 'ar-SA' : 'fr-FR';
+    window.recognition.interimResults = false;
+    
+    // Animation du bouton pendant l'écoute
+    btn.style.transform = "scale(1.05)";
+    btn.style.background = "#d63033"; 
+    btn.innerHTML = "👂 أنا أستمع... (Parle maintenant)";
+    msgRetour.innerText = "";
+    msgRetour.style.color = "#333";
+
+    window.recognition.onresult = (event) => {
+        let reponseEnfant = event.results[0][0].transcript.trim();
+        
+        // Animation pendant que Gemini réfléchit
+        btn.style.background = "#fdcb6e"; 
+        btn.innerHTML = "🤔 أفكر... (Gemini réfléchit)";
+        btn.style.transform = "scale(1)";
+        
+        // On envoie la réponse à Gemini via Google Apps Script
+        google.script.run.withSuccessHandler(resultatGemini => {
+            // Rétablissement du bouton
+            btn.style.background = "linear-gradient(45deg, #0984e3, #6c5ce7)"; 
+            btn.innerHTML = "🎤 اضغط وأجب بصوتك";
+            
+            // Affichage du retour de l'IA
+            msgRetour.innerText = resultatGemini.message;
+            
+            if (resultatGemini.correct) {
+                msgRetour.style.color = "var(--success)";
+                if (typeof confetti !== "undefined") confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 } });
+                try { document.getElementById('sfx-win').play(); } catch (e) {}
+                window.state.coins += 30; // Gros bonus pour l'effort vocal !
+                window.updateHud();
+            } else {
+                msgRetour.style.color = "var(--error)";
+                try { document.getElementById('sfx-fail').play(); } catch (e) {}
+            }
+
+            // L'IA lit sa propre réponse à voix haute
+            let u = new SpeechSynthesisUtterance(resultatGemini.message);
+            u.lang = 'ar-SA';
+            speechSynthesis.speak(u);
+
+        }).evaluerReponseGemini(texteLecon, question, reponseEnfant);
+    };
+
+    window.recognition.onerror = (e) => {
+        btn.style.background = "linear-gradient(45deg, #0984e3, #6c5ce7)";
+        btn.innerHTML = "🎤 اضغط وأجب بصوتك";
+        msgRetour.innerText = "❌ لم أسمعك جيداً (Erreur micro)";
+    };
+
+    window.recognition.start();
+};
+// --- FONCTION POUR LA FABRIQUE À HISTOIRES ---
+window.lancerCreationHistoire = () => {
+    const mots = document.getElementById('input-mots-cles').value.trim();
+    if(!mots) { alert("Il faut écrire quelques mots magiques !"); return; }
+    
+    const btn = document.getElementById('btn-generer-histoire');
+    btn.innerHTML = "⏳ Gemini invente l'histoire... (Patiente un peu)";
+    btn.disabled = true;
+    
+    // Appel du Backend
+    google.script.run.withSuccessHandler(res => {
+        btn.innerHTML = "🪄 Créer l'histoire !";
+        btn.disabled = false;
+        
+        if(res.erreur) {
+            alert("Oups, une erreur s'est produite : " + res.erreur);
+            return;
+        }
+        
+        // Fermer la fenêtre
+        document.getElementById('fabrique-modal').style.display = 'none';
+        document.getElementById('input-mots-cles').value = ''; // On vide le champ
+        
+        // On crée la nouvelle leçon avec l'histoire de Gemini
+        const nouvelleLecon = {
+            titre: "✨ " + res.titre,
+            texte: res.texte,
+            q_question: "هل أعجبتك هذه القصة المبتكرة؟" // Petite question générique
+        };
+        
+        // 1. On l'ajoute à la mémoire de l'application
+        window.lecons.push(nouvelleLecon);
+        const indexNouvelle = window.lecons.length - 1;
+        
+        // 2. On l'ajoute dans le menu déroulant à gauche
+        let select = document.getElementById('choix-lecon');
+        let option = document.createElement('option');
+        option.value = indexNouvelle;
+        option.innerText = nouvelleLecon.titre;
+        select.appendChild(option);
+        
+        // 3. On sélectionne cette nouvelle histoire et on la charge !
+        select.value = indexNouvelle;
+        window.changerLecon();
+        
+        // Petite célébration
+        if (typeof confetti !== "undefined") confetti({ particleCount: 150, spread: 80 });
+        
+    }).genererHistoireGemini(mots);
+};
+// --- LANCEMENT DE LA CALIBRATION MAGIQUE ---
+window.lancerCalibrationMagique = () => {
+    const emojis = ["🍎", "🚀", "🦁", "🎈", "⭐"];
+    const emojiChoisi = emojis[Math.floor(Math.random() * emojis.length)];
+    
+    const ecran = document.getElementById('calibration-magique');
+    const divEmoji = document.getElementById('calibration-emoji');
+    const texte = document.getElementById('calibration-texte');
+    
+    // 1. On affiche l'écran
+    divEmoji.innerText = emojiChoisi;
+    texte.innerText = "⏳ لحظة واحدة... (Un instant...)";
+    ecran.style.display = 'flex';
+    
+    // 2. On demande à Gemini sa phrase amusante
+    google.script.run.withSuccessHandler(res => {
+        texte.innerText = res.message;
+        
+        // 3. L'IA lit la phrase
+        let u = new SpeechSynthesisUtterance(res.message);
+        u.lang = 'ar-SA';
+        
+        // 4. QUAND L'IA A FINI DE PARLER (L'enfant est alors parfaitement concentré)
+        u.onend = () => {
+            // ---> C'EST ICI QUE VOUS LANCEZ VOTRE VRAIE CALIBRATION <---
+            console.log("C'est le moment idéal : L'enfant est figé !");
+            
+            // REMPLACEZ CETTE LIGNE PAR VOTRE FONCTION LOCALE DE CALIBRATION
+            // Exemple : window.startCamera(); ou window.calibrerBiometrie();
+            
+            
+            // On ferme l'écran magique après 3 secondes (le temps que la caméra prenne les mesures)
+            setTimeout(() => {
+                ecran.style.display = 'none';
+                if (typeof confetti !== "undefined") confetti({ particleCount: 100, spread: 70 });
+            }, 3000);
+        };
+        
+        speechSynthesis.speak(u);
+        
+    }).genererPhraseCalibration(emojiChoisi);
+};
+
+        
+        console.log("Lunoo IA chargée avec succès !");
+    </script>
+</body>
+</html>

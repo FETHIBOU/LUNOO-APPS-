@@ -1,0 +1,1158 @@
+<style>
+/* --- VARIABLES & THEMES --- */
+:root { 
+    --accent: #6c5ce7; --error: #d63033; --success: #00b894; --gold: #fdcb6e;
+    --spot-x: 50%; --spot-y: 50%;
+    --bg: #1e2325; --txt: #e0e5ec;
+    --panel-bg: rgba(255,255,255,0.1); 
+    --hud-bg: rgba(0,0,0,0.6); --hud-txt: #fff;
+}
+* { box-sizing: border-box; user-select: none; outline: none; }
+
+body { 
+    background-color: var(--bg); color: var(--txt); font-family: 'Amiri', serif; 
+    margin: 0; min-height: 100vh; overflow-x: hidden; 
+    display: flex; flex-direction: column; align-items: center; 
+    transition: background 0.5s ease, color 0.3s;
+    background-image: radial-gradient(ellipse at bottom, #0d1a26 0%, #0d1217 100%);
+}
+
+/* --- STYLES D'IMPRESSION --- */
+@media print {
+    body { background: white !important; color: black !important; background-image: none !important; }
+    body > * { display: none !important; } 
+    #kpi-modal { 
+        display: flex !important; position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+        background: white !important; z-index: 999999; align-items: flex-start; padding-top: 0;
+    }
+    #kpi-modal .modal-content {
+        box-shadow: none !important; border: 2px solid #000 !important; width: 100% !important; max-width: 100% !important;
+        background: white !important; color: black !important;
+    }
+    .no-print { display: none !important; }
+}
+
+/* --- UI MODES --- */
+body.reading-mode {
+    --bg: #f0f2f5; --txt: #2d3436; --panel-bg: #ffffff; --hud-bg: rgba(255,255,255,0.9); --hud-txt: #2d3436;
+    background-image: none !important;
+}
+body.reading-mode .stars, body.reading-mode .logo-top-left { display: none !important; }
+body.dark-mode { --bg: #2d3436; --txt: #dfe6e9; --panel-bg: rgba(45, 52, 54, 0.95); background-image: none; }
+body.sepia-mode { --bg: #f4ecd8; --txt: #5b4636; --panel-bg: rgba(244, 236, 216, 0.95); background-image: none; }
+
+/* --- DECORATIONS --- */
+.stars { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+.star { position: absolute; width: 2px; height: 2px; background: white; border-radius: 50%; animation: twinkle 3s infinite; }
+@keyframes twinkle { 0%, 100% { opacity: 0.3; transform: scale(1); } 50% { opacity: 1; transform: scale(1.5); } }
+.logo-top-left { position: fixed; top: 20px; left: 20px; z-index: 8001; display: flex; align-items: center; gap: 10px; font-family: 'Fredoka One', cursive; color: var(--gold); font-size: 24px; text-shadow: 0 0 10px rgba(253, 203, 110, 0.5); }
+.logo-top-left span { font-size: 30px; }
+
+/* --- MODE TUNNEL AMÉLIORÉ (Loupe Lumineuse & Dégradé doux) --- */
+
+/* 1. Le masque sombre : fini le noir total ! Un beau dégradé fluide */
+body.tunnel-active::before { 
+    content: ''; 
+    position: fixed; 
+    top: 0; 
+    left: 0; 
+    width: 100%; 
+    height: 100%; 
+    /* Le dégradé : 100% clair au centre, ombre douce à 40%, fond sombre à 80% (au lieu de 98%) */
+    background: radial-gradient(circle 180px at var(--spot-x) var(--spot-y), 
+                                transparent 0%, 
+                                rgba(0, 0, 0, 0.4) 50%, 
+                                rgba(0, 0, 0, 0.85) 100%); 
+    z-index: 1500; 
+    pointer-events: none; 
+    transition: background 0.1s linear; 
+}
+
+/* 2. L'effet Loupe ultra-lumineux sur le mot en cours */
+body.tunnel-active .highlight-mot { 
+    position: relative; 
+    z-index: 1501; 
+    transform: scale(1.4); /* Grossissement (Loupe) */
+    background: #ffffff; /* Fond pur pour un contraste maximal */
+    color: #000000 !important; /* Texte bien noir */
+    padding: 5px 15px; 
+    border-radius: 12px; 
+    /* Un double halo lumineux : blanc scintillant autour + léger reflet violet à l'intérieur */
+    box-shadow: 0 10px 30px rgba(255, 255, 255, 0.9), 
+                inset 0 0 15px rgba(108, 92, 231, 0.3); 
+    display: inline-block; 
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Animation fluide */
+}
+
+/* 3. On s'assure que le reste du texte RESTE VISIBLE sous l'ombre */
+body.tunnel-active #zone-lecture { 
+    color: inherit; /* Le texte garde sa couleur normale */
+    text-shadow: none; 
+}
+
+/* --- MODE COULEURS --- */
+body.colors-active .mot-pair { color: #d63033; font-weight: bold; } 
+body.colors-active .mot-impair { color: #0984e3; font-weight: bold; }
+body.dark-mode.colors-active .mot-pair { color: #ff7675; }
+body.dark-mode.colors-active .mot-impair { color: #74b9ff; }
+
+/* --- LOGIN --- */
+#home-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 8000; display: flex; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(5px); }
+.main-card { padding: 40px; border-radius: 30px; width: 90%; max-width: 500px; text-align: center; background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37); border: 1px solid rgba(255, 255, 255, 0.18); }
+.login-input { width: 80%; padding: 15px; margin: 10px 0; border-radius: 30px; border: none; background: rgba(255,255,255,0.1); color: white; text-align: center; font-size: 16px; }
+
+/* --- HUD --- */
+#app-interface { display: none; width: 100%; max-width: 1200px; justify-content: center; padding-top: 20px; position: relative; }
+.hud-display, .gamification-hud { position: fixed; top: 15px; z-index: 6000; display: flex; gap: 15px; font-weight: bold; background: var(--hud-bg); color: var(--hud-txt); padding: 8px 20px; border-radius: 30px; backdrop-filter: blur(5px); align-items: center; font-size: 14px; border: 1px solid rgba(0,0,0,0.1); }
+.hud-display { right: 20px; } .gamification-hud { left: 20px; top: 60px; } 
+.id-input { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: inherit; padding: 5px; border-radius: 10px; width: 100px; text-align: center; font-family: inherit; font-size: 12px; margin-left: 5px; }
+
+/* --- INDICATEURS IA --- */
+.status-dot { width: 12px; height: 12px; border-radius: 50%; background: #999; display: inline-block; }
+.status-dot.active { background: var(--success); box-shadow: 0 0 8px var(--success); }
+.status-dot.distracted { background: var(--error); animation: blinkRed 0.5s infinite; }
+@keyframes blinkRed { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+/* --- ALERTE DISTRACTION --- */
+.livre-card { width: 65%; min-height: 60vh; margin: 70px auto 120px auto; padding: 50px; background: var(--panel-bg); box-shadow: 0 10px 30px rgba(0,0,0,0.1); border-radius: 30px; display: flex; flex-direction: column; align-items: center; position: relative; z-index: 10; transition: border 0.3s, box-shadow 0.3s; }
+body.attention-lost .livre-card { border: 3px solid var(--error) !important; box-shadow: 0 0 25px rgba(214, 48, 51, 0.5) !important; }
+.distraction-hud-alert { color: var(--error) !important; animation: blinkRed 1s infinite; }
+
+/* --- BOUTONS & PANNEAUX --- */
+.draggable-panel { position: fixed; background: var(--panel-bg); border: 1px solid rgba(0,0,0,0.1); box-shadow: 0 10px 20px rgba(0,0,0,0.1); border-radius: 20px; padding: 15px; display: flex; flex-direction: column; gap: 10px; z-index: 3000; align-items: center; }
+.toolbar { top: 100px; left: 20px; width: 185px; } .controls { top: 200px; right: 20px; width: 90px; }
+.drag-handle { width: 40px; height: 5px; background: #ccc; border-radius: 10px; margin-bottom: 5px; cursor: move; }
+.btn-round, .btn-big, .action-button, select { background: var(--bg); border: 1px solid rgba(0,0,0,0.1); box-shadow: 3px 3px 6px rgba(0,0,0,0.1); border-radius: 50px; color: var(--txt); cursor: pointer; transition: 0.2s; font-family: inherit; }
+.btn-round.active { background: var(--accent); color: white; }
+.btn-big { width: 60px; height: 60px; font-size: 24px; display: flex; justify-content: center; align-items: center; margin: 5px 0; }
+.btn-round { width: 45px; height: 45px; font-size: 20px; display: flex; justify-content: center; align-items: center; margin: 5px 0; }
+.action-button { padding: 15px 30px; font-weight: bold; margin: 10px; min-width: 150px; }
+.voice-listening { animation: pulse-red 1.5s infinite; border: 2px solid var(--accent); background: rgba(108, 92, 231, 0.3); }
+
+/* --- ZONE TEXTE --- */
+#zone-lecture { font-size: 40px; line-height: 2.2; text-align: center; width: 100%; direction: rtl; transition: all 0.3s; }
+.phrase { transition: opacity 0.5s; padding: 10px; border-radius: 15px; display: inline-block; cursor: pointer; }
+.phrase.active { background: rgba(108, 92, 231, 0.1); }
+.mot-cliquable { cursor: pointer; border-bottom: 2px dotted #ccc; margin: 0 4px; display: inline-block; }
+.tashkeel { color: #e17055; font-size: 0.9em; }
+
+/* --- VIDEO & CAMERA --- */
+#live-cam-container { position: fixed; bottom: 10px; left: 10px; width: 120px; z-index: 9000; border-radius: 10px; overflow: hidden; border: 2px solid var(--accent); display: none; }
+video { transform: scaleX(-1); border-radius: 10px; }
+#calib-video { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; border-radius: 15px; }
+
+/* --- MODALS --- */
+.modal { display: none; position: fixed; z-index: 9000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); align-items: center; justify-content: center; backdrop-filter: blur(5px); }
+.modal-content { background: var(--bg); color: var(--txt); padding: 30px; border-radius: 20px; width: 90%; max-width: 500px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.2); position: relative; max-height: 90vh; overflow-y: auto; }
+
+/* Jauges Calibration */
+.blink-meter-box { width: 100%; height: 30px; background: #ddd; border-radius: 15px; position: relative; overflow: hidden; border: 2px solid #ccc; margin-top: 10px; }
+.blink-meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #00b894, #d63033); transition: width 0.05s linear; }
+.threshold-line { position: absolute; top:0; bottom:0; width: 3px; background: blue; z-index: 5; left: 50%; }
+
+/* Mascotte Test dans Calibration */
+.mascot-preview { width: 80px; height: 80px; position: absolute; bottom: 10px; right: 10px; z-index: 20; background: rgba(255,255,255,0.5); border-radius: 50%; padding: 5px; }
+
+/* Checklist Styles */
+.checklist-item { background: rgba(255,255,255,0.1); margin: 10px 0; padding: 15px; border-radius: 15px; display: flex; align-items: center; gap: 15px; text-align: left; }
+.checklist-icon { font-size: 30px; }
+
+/* Shop Grid */
+.shop-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; padding: 10px; }
+.shop-item { background: rgba(255,255,255,0.1); padding: 10px; border-radius: 15px; cursor: pointer; border: 2px solid transparent; transition: 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+.shop-item.owned { border-color: var(--success); }
+.shop-item.selected { background: rgba(108, 92, 231, 0.2); border-color: var(--accent); }
+
+/* Diplôme */
+.diploma-container { border: 5px double var(--gold); padding: 20px; border-radius: 15px; background: rgba(255,255,255,0.9); color: #333; position: relative; overflow: hidden; }
+.diploma-header { font-family: 'Fredoka One', cursive; color: var(--accent); font-size: 2em; margin-bottom: 10px; }
+.diploma-ribbon { font-size: 40px; position: absolute; top: -10px; right: 20px; }
+.kpi-row { display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px dashed #ccc; font-size: 1.1em; }
+.ai-comment-box { background: #f0f8ff; border-left: 4px solid var(--accent); padding: 15px; margin-top: 20px; font-style: italic; text-align: justify; direction: rtl; font-family: 'Amiri', serif; white-space: pre-wrap; }
+
+/* Immersif */
+body.immersive-active .draggable-panel, body.immersive-active .hud-display, body.immersive-active .gamification-hud, body.immersive-active .logo-top-left { display: none !important; }
+body.immersive-active .livre-card { width: 95%; height: 95vh; margin: 0; display:flex; justify-content:center; align-items:center; box-shadow: none; border:none; background: var(--bg); }
+#btn-exit-immersive { display: none; position: fixed; top: 20px; right: 20px; z-index: 9999; width: 55px; height: 55px; background: var(--error); color: white; border-radius: 50%; border: 3px solid white; cursor: pointer; align-items:center; justify-content:center; font-size:20px; }
+body.immersive-active #btn-exit-immersive { display: flex; }
+/* Règle de lecture */
+
+/* Règle de lecture */
+#focus-line {
+    position: fixed;
+    /* On enlève la height fixe ici, elle sera gérée par le JS */
+    width: 100%;
+    background: rgba(108, 92, 231, 0.15); /* Violet transparent */
+    border-top: 2px solid var(--accent);
+    border-bottom: 2px solid var(--accent);
+    pointer-events: none; /* Permet de cliquer à travers */
+    display: none;
+    z-index: 2000; /* Devant le texte */
+    transform: translateY(-50%); /* CENTRAGE VERTICAL AUTOMATIQUE */
+    transition: height 0.2s ease, top 0.05s linear; /* Animation fluide */
+}
+/* Mode Syllabique Arabe */
+body.syllabic-active .mot-cliquable {
+    background: linear-gradient(90deg, #2d3436 50%, #0984e3 50%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    display: inline-block;
+}
+
+/* Amélioration visuelle pour DYS */
+body.dys-spaced .phrase {
+    word-spacing: 12px !important;
+    line-height: 3 !important;
+}
+/* Animation Combo 🔥 */
+#combo-badge {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: linear-gradient(45deg, #ff9f43, #ee5253);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-weight: bold;
+    display: none;
+    animation: bounce 0.5s infinite alternate;
+    z-index: 7000;
+    box-shadow: 0 0 20px rgba(238, 82, 83, 0.5);
+}
+
+@keyframes bounce {
+    from { transform: scale(1); }
+    to { transform: scale(1.2); }
+}
+
+/* Barre d'Expérience */
+.xp-hud {
+    position: fixed;
+    top: 105px;
+    left: 20px;
+    width: 150px;
+    height: 12px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid rgba(0,0,0,0.1);
+}
+
+#xp-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #55efc4, #00b894);
+    transition: width 0.5s ease;
+}
+/* Jauge de Concentration (Focus Meter) */
+.focus-meter-hud {
+    position: fixed;
+    top: 60px;
+    right: 20px;
+    width: 120px;
+    height: 10px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    overflow: hidden;
+    z-index: 6000;
+}
+
+#focus-fill {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, var(--error), var(--success));
+    transition: width 0.3s ease;
+}
+/* --- AMÉLIORATIONS PÉDAGOGIQUES --- */
+
+.voyelle-courte { color: #e84393; font-weight: bold; }
+.article-defini { color: #00b894; font-weight: bold; }
+.shadda { color: #d63033; font-size: 1.3em; }
+.respiration-courte { font-size: 0.6em; opacity: 0.5; margin: 0 5px; }
+.respiration-longue { font-size: 0.8em; color: var(--error); margin: 0 8px; }
+
+/* 2. Indices de Respiration (Prosodie) */
+.respiration-courte { 
+    font-size: 0.6em; 
+    opacity: 0.5; 
+    vertical-align: middle; 
+    margin: 0 5px; 
+    cursor: default;
+}
+
+.respiration-longue { 
+    font-size: 0.8em; 
+    color: var(--error); 
+    vertical-align: middle; 
+    margin: 0 8px; 
+    cursor: default;
+}
+
+/* 3. Feedback Mode Écho */
+.echo-success { border: 2px solid #00b894 !important; background: rgba(0, 184, 148, 0.1); }
+.echo-fail { border: 2px solid #d63033 !important; background: rgba(214, 48, 51, 0.1); }
+/* --- MODE DÉTECTIVE (Texte à Trous) --- */
+.input-trou {
+    width: 100px;
+    padding: 2px 5px;
+    margin: 0 5px;
+    border: 2px dashed #a29bfe; /* Bordure violette pointillée */
+    border-radius: 8px;
+    text-align: center;
+    font-family: inherit; /* Garde la police arabe */
+    font-size: 0.9em;
+    background: rgba(255, 255, 255, 0.9);
+    color: #333;
+    transition: all 0.3s ease;
+}
+
+.input-trou:focus {
+    transform: scale(1.1);
+    border-color: #6c5ce7;
+    outline: none;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+
+.input-trou.success {
+    background-color: #00b894 !important; /* Vert */
+    color: white !important;
+    border: 2px solid #00b894 !important;
+    font-weight: bold;
+}
+
+.input-trou.error {
+    background-color: #ffeaa7;
+    border-color: #d63033;
+    animation: shake 0.3s;
+}
+
+@keyframes shake {
+    0% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+    100% { transform: translateX(0); }
+}
+/* --- GARDIEN DE LA DISTANCE --- */
+.flou-myopie #zone-lecture {
+    filter: blur(8px);
+    pointer-events: none; /* Empêche de cliquer si on est trop près */
+    transition: filter 0.3s ease;
+}
+
+#alerte-distance {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(214, 48, 51, 0.9);
+    color: white;
+    padding: 20px 40px;
+    border-radius: 20px;
+    font-size: 24px;
+    font-weight: bold;
+    z-index: 9999;
+    display: none; /* Caché par défaut */
+    box-shadow: 0 0 30px rgba(0,0,0,0.5);
+    text-align: center;
+}
+/* --- PAUSE BÂILLEMENT --- */
+#alerte-fatigue {
+    position: fixed;
+    top: 20%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+    color: white;
+    padding: 15px 30px;
+    border-radius: 50px;
+    font-size: 18px;
+    z-index: 9999;
+    display: none;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+    animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes popIn {
+    from { transform: translateX(-50%) scale(0); }
+    to { transform: translateX(-50%) scale(1); }
+}
+/* --- MODE "RALENTI INTELLIGENT" --- */
+#smart-slow-badge {
+    position: fixed;
+    top: 70px;
+    right: 50%;
+    transform: translateX(50%);
+    background: rgba(253, 203, 110, 0.9); /* Jaune/Gold */
+    color: #333;
+    padding: 5px 15px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: bold;
+    display: none;
+    z-index: 5000;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    animation: fadeIn 0.3s;
+}
+/* --- MODE CINÉMA (IMMERSION TOTALE) --- */
+
+/* 1. L'état de base du corps en mode cinéma */
+body.cinema-mode {
+    background: #111; /* Fond sombre pour le focus */
+    overflow: hidden; /* Pas de scrollbar */
+}
+
+/* 2. La carte du livre prend tout l'écran */
+body.cinema-mode .livre-card {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    z-index: 1000;
+    background: var(--bg); /* Garde la couleur de fond (blanc/noir/sepia) */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border: none !important;
+    box-shadow: none !important;
+    padding-top: 80px; /* Place pour le menu haut */
+    padding-bottom: 100px; /* Place pour le menu bas */
+}
+
+/* 3. TRANSFORMATION DU MENU GAUCHE -> BARRE HORIZONTALE EN HAUT */
+body.cinema-mode #left-menu {
+    position: fixed;
+    top: 0 !important; /* Force la position haut */
+    left: 0 !important;
+    width: 100% !important;
+    height: auto;
+    flex-direction: row !important; /* Devient horizontal */
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    background: rgba(0, 0, 0, 0.85); /* Fond semi-transparent */
+    backdrop-filter: blur(5px);
+    border-radius: 0 0 20px 20px;
+    z-index: 5000;
+    padding: 10px;
+    
+    /* Animation d'apparition */
+    transition: transform 0.3s ease-in-out;
+    transform: translateY(-100%); /* Caché vers le haut par défaut */
+}
+
+/* Ajustement des éléments dans le menu haut */
+body.cinema-mode #left-menu .slider-group {
+    color: white;
+    font-size: 12px;
+}
+body.cinema-mode #left-menu select {
+    max-width: 150px;
+}
+
+/* 4. TRANSFORMATION DU MENU DROIT -> BARRE HORIZONTALE EN BAS */
+body.cinema-mode #right-menu {
+    position: fixed;
+    top: auto !important;
+    bottom: 0 !important; /* Force la position bas */
+    left: 0 !important;
+    width: 100% !important;
+    height: auto;
+    flex-direction: row !important; /* Devient horizontal */
+    justify-content: center;
+    gap: 20px;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(5px);
+    border-radius: 20px 20px 0 0;
+    z-index: 5000;
+    padding: 10px;
+    
+    /* Animation d'apparition */
+    transition: transform 0.3s ease-in-out;
+    transform: translateY(100%); /* Caché vers le bas par défaut */
+}
+
+/* 5. Gestion de l'affichage quand on bouge la souris */
+body.cinema-mode.ui-visible #left-menu {
+    transform: translateY(0); /* Apparaît */
+}
+body.cinema-mode.ui-visible #right-menu {
+    transform: translateY(0); /* Apparaît */
+}
+
+/* Masquer les éléments inutiles en mode cinéma */
+body.cinema-mode .logo-top-left, 
+body.cinema-mode .hud-display,
+body.cinema-mode .gamification-hud,
+body.cinema-mode .drag-handle {
+    display: none !important;
+}
+
+/* Bouton Quitter discret en haut à droite */
+#btn-quit-cinema {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 6000;
+    background: #d63033;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    font-weight: bold;
+    display: none; /* Caché par défaut */
+}
+body.cinema-mode.ui-visible #btn-quit-cinema {
+    display: block;
+}
+/* --- HEATMAP STYLES --- */
+.heatmap-word { padding: 2px 5px; margin: 2px; border-radius: 4px; display: inline-block; }
+.heat-low { background-color: rgba(0, 184, 148, 0.2); border: 1px solid #00b894; color: #006266; } /* Facile (Vert) */
+.heat-med { background-color: rgba(253, 203, 110, 0.3); border: 1px solid #fdcb6e; color: #d35400; font-weight:bold; } /* Moyen (Orange) */
+.heat-high { background-color: rgba(214, 48, 51, 0.3); border: 1px solid #d63033; color: #c0392b; font-weight:bold; transform:scale(1.1); } /* Difficile (Rouge) */
+/* --- 1. MODE NOMADE (Mobile / Tablette) --- */
+@media screen and (max-width: 768px) {
+    /* Réorganiser l'écran principal */
+    .livre-card {
+        width: 95%;
+        margin: 60px auto 100px auto; /* Marge pour le menu bas */
+        padding: 20px;
+    }
+
+    #zone-lecture {
+        font-size: 24px !important; /* Force une taille lisible */
+        line-height: 2.0;
+    }
+
+    /* Transformer les barres latérales en menu du bas */
+    .draggable-panel {
+        position: fixed;
+        left: 0 !important;
+        top: auto !important;
+        bottom: 0 !important;
+        width: 100% !important;
+        flex-direction: row;
+        overflow-x: auto; /* Scroll horizontal si trop de boutons */
+        padding: 10px;
+        background: rgba(30, 35, 37, 0.95);
+        border-radius: 20px 20px 0 0;
+        z-index: 8000;
+        justify-content: space-around;
+        box-shadow: 0 -5px 15px rgba(0,0,0,0.3);
+    }
+    
+    .draggable-panel.toolbar { bottom: 70px !important; border-bottom: 1px solid #444; border-radius: 0; }
+    .draggable-panel.controls { bottom: 0 !important; height: 70px; }
+
+    /* Cacher les éléments inutiles sur mobile */
+    .drag-handle, .slider-group span { display: none; }
+    
+    /* Adapter les sliders */
+    .slider-group { width: 40px; }
+    input[type=range] { width: 100%; }
+
+    /* Mascotte plus petite */
+    .mascot-container { width: 60px; height: 60px; bottom: -30px; right: -10px; position:absolute; }
+
+    /* HUD en haut plus compact */
+    .hud-display { top: 5px; right: 5px; padding: 5px 10px; font-size: 11px; width: auto; }
+    .gamification-hud { top: 5px; left: 5px; padding: 5px 10px; font-size: 11px; }
+}
+
+/* --- 2. STYLE MOT CACHÉ --- */
+.mot-secret {
+    background: #2d3436;
+    color: transparent;
+    border-radius: 8px;
+    padding: 0 10px;
+    margin: 0 5px;
+    border: 2px dashed #ffeaa7;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-shadow: none;
+    position: relative;
+    vertical-align: middle;
+    min-width: 50px;
+    display: inline-block;
+    text-align: center;
+}
+
+.mot-secret::after {
+    content: "❓";
+    color: #fff;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.8em;
+}
+
+.mot-secret.listening {
+    border-color: #00b894;
+    animation: pulse-green 1s infinite;
+    background: #00b894;
+}
+
+.mot-secret.revealed {
+    background: transparent;
+    color: #00b894;
+    border: none;
+    font-weight: bold;
+    transform: scale(1.2);
+}
+.mot-secret.revealed::after { content: none; }
+
+@keyframes pulse-green {
+    0% { box-shadow: 0 0 0 0 rgba(0, 184, 148, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(0, 184, 148, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(0, 184, 148, 0); }
+}
+
+/* --- 3. LES SPECTATEURS (Animation) --- */
+#crowd-container {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 150px;
+    pointer-events: none;
+    z-index: 9000;
+    display: none;
+    justify-content: center;
+    align-items: flex-end;
+    overflow: hidden;
+}
+
+.spectator {
+    font-size: 50px;
+    position: relative;
+    bottom: -60px;
+    animation: jumpCrowd 0.5s infinite alternate;
+    margin: 0 5px;
+}
+
+@keyframes jumpCrowd {
+    from { transform: translateY(0); }
+    to { transform: translateY(-40px); }
+}
+/* Style pour l'éditeur Cache-Cache */
+.editor-word {
+    padding: 5px 8px;
+    margin: 3px;
+    border-radius: 5px;
+    border: 1px solid #ddd;
+    cursor: cell; /* Curseur qui ressemble à une croix/pinceau */
+    display: inline-block;
+    transition: background 0.1s;
+    
+    /* IMPORTANT : Empêche de sélectionner le texte comme dans Word */
+    -webkit-user-select: none; /* Safari */
+    -ms-user-select: none; /* IE 10 and IE 11 */
+    user-select: none; /* Standard syntax */
+}
+
+/* État caché */
+.editor-word.is-hidden {
+    background-color: #ff7675; /* Rouge */
+    color: white;
+    border-color: #d63031;
+    box-shadow: inset 0 0 5px rgba(0,0,0,0.2);
+}
+
+/* État visible */
+.editor-word.is-visible {
+    background-color: #f1f2f6;
+    color: black;
+}
+/* --- MODE PINCEAU (LECTURE) --- */
+
+/* Quand le mode est activé, on change le curseur et on interdit la sélection de texte */
+body.paint-active {
+    cursor: cell !important; /* Curseur "croix" ou "pinceau" */
+}
+
+body.paint-active .mot-cliquable {
+    cursor: cell !important;
+    user-select: none; /* Indispensable pour que le glisser fonctionne */
+}
+
+/* Apparence du mot quand il est caché */
+.mot-cliquable.masked {
+    background-color: #2d3436; /* Fond sombre */
+    color: transparent !important; /* Texte invisible */
+    border-radius: 5px;
+    transition: background 0.2s, color 0.2s;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+    position: relative;
+}
+
+/* Petit point d'interrogation discret sur le mot caché */
+.mot-cliquable.masked::after {
+    content: '?';
+    color: rgba(255,255,255,0.3);
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.6em;
+    pointer-events: none;
+}
+/* --- CORRECTIF VISIBILITÉ CHECKBOXES (MODE CINÉMA) --- */
+
+/* 1. Changer la couleur du texte des labels en BLANC */
+body.cinema-mode #left-menu label {
+    color: #ffffff !important;
+    font-weight: bold;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.9); /* Ombre portée pour bien ressortir */
+}
+
+/* 2. Changer le fond des petites boîtes qui contiennent les cases à cocher */
+/* On cible les divs à l'intérieur du menu qui ont un fond défini */
+body.cinema-mode #left-menu > div[style*="background"] {
+    background-color: rgba(255, 255, 255, 0.15) !important; /* Gris clair transparent */
+    border: 1px solid rgba(255, 255, 255, 0.3); /* Bordure blanche discrète */
+    color: white !important;
+}
+
+/* 3. Ajustement pour l'input (la case elle-même) */
+body.cinema-mode #left-menu input[type="checkbox"] {
+    accent-color: var(--accent); /* Garde la couleur violette/bleue quand coché */
+    border: 2px solid white;
+}
+/* ================================================= */
+/* MODIFICATION ANTI-DISTRACTION (LUNOO 5)          */
+/* Cache le retour caméra tout en gardant l'IA active */
+/* ================================================= */
+
+/* On cache le conteneur visuellement pour ne pas prendre de place dans le menu */
+#live-cam-container {
+    height: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+}
+
+/* On réduit la vidéo à 1 pixel et on la sort de l'écran 
+   IMPORTANT : On ne met pas "display: none" car cela arrêterait l'IA sur certains navigateurs.
+*/
+#webcam {
+    position: fixed !important;
+    top: -5000px !important;
+    left: -5000px !important;
+    width: 1px !important;
+    height: 1px !important;
+    z-index: -100;
+}
+/* ================================================= */
+/* MODIF LUNOO 5 - INTERACTION TUNNEL               */
+/* ================================================= */
+
+/* Permet de cliquer au travers du masque sombre du tunnel */
+#tunnel-overlay, 
+.tunnel-mask, 
+#canvas-tunnel {
+    pointer-events: none !important;
+}
+
+/* S'assure que les mots restent cliquables */
+.word-span {
+    cursor: pointer;
+    position: relative; 
+    z-index: 10; /* Place les mots au-dessus visuellement si nécessaire */
+}
+/* ================================================= */
+/* CORRECTION LUNOO 5 - VOYELLES FLOTTANTES         */
+/* ================================================= */
+
+/* 1. Quand le tunnel est activé, on force les voyelles et accents 
+      à prendre la même couleur que le texte parent (qui est caché/sombre) */
+body.tunnel-active .voyelle-courte,
+body.tunnel-active .shadda,
+body.tunnel-active .article-defini,
+body.tunnel-active .respiration-courte,
+body.tunnel-active .respiration-longue {
+    color: inherit !important; 
+    text-shadow: none !important;
+    background: transparent !important;
+}
+
+/* 2. EXCEPTION : Si le curseur (spotlight) passe dessus, 
+      on permet aux couleurs de revenir (via la classe highlight ou active) */
+
+/* Si la structure HTML utilise le survol direct pour révéler : */
+body.tunnel-active .phrase:hover .voyelle-courte, 
+body.tunnel-active .mot-cliquable:hover .voyelle-courte,
+body.tunnel-active .mot-cliquable:hover .shadda {
+   /* On ne force plus le "inherit", la couleur d'origine reviendra */
+   color: var(--accent-color, #e84393) !important; /* Remettre la couleur rose si nécessaire ici */
+}
+/* ================================================= */
+/* CORRECTIFS : MENU ET CURSEURS (RTL)               */
+/* ================================================= */
+
+/* 1. Empêche le menu de gauche de déborder de l'écran en bas */
+#left-menu {
+    max-height: 85vh; /* Le menu ne dépassera jamais 85% de l'écran */
+    overflow-y: auto; /* Ajoute une barre de défilement discrète si c'est trop long */
+    overflow-x: hidden;
+}
+
+/* 2. Répare le bug du curseur lié au sens de lecture Arabe (RTL) */
+.slider-group input[type="range"] {
+    direction: ltr; /* Force le curseur à fonctionner de gauche à droite normalement */
+    width: 100%; 
+    margin-top: 5px;
+    cursor: pointer;
+}
+
+/* 3. S'assure que le bloc des curseurs est bien aligné */
+.slider-group {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 5px;
+}
+/* --- CONTRÔLES MODE IMMERSIF --- */
+#immersive-controls {
+    display: none; /* Caché par défaut */
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    gap: 20px;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 10px 20px;
+    border-radius: 50px;
+    backdrop-filter: blur(5px);
+}
+
+/* On l'affiche UNIQUEMENT quand le body a la classe immersive-active */
+body.immersive-active #immersive-controls {
+    display: flex;
+}
+/* ================================================= */
+/* CORRECTIF : TAILLE DES CURSEURS EN MODE CINÉMA    */
+/* ================================================= */
+
+body.cinema-mode .slider-group {
+    width: 150px !important; /* Limite la largeur à une taille raisonnable */
+    flex: none; /* Empêche le bloc de s'étirer à l'infini */
+    margin: 0 10px; /* Ajoute un petit espace autour pour que ce soit joli */
+}
+/* ================================================= */
+/* DÉBLOCAGE EXTRÊME DES CHAMPS DE TEXTE             */
+/* ================================================= */
+
+/* 1. On désactive le flou qui bloque les clics sur certains navigateurs */
+#home-screen, .main-card {
+    backdrop-filter: none !important; 
+    -webkit-backdrop-filter: none !important;
+    pointer-events: auto !important;
+}
+
+/* 2. On force le curseur et la sélection sur tous les inputs */
+input, input.login-input {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    -moz-user-select: text !important;
+    pointer-events: auto !important;
+    cursor: text !important;
+    z-index: 999999 !important;
+    position: relative !important;
+}
+input, textarea, select {
+    user-select: auto !important;
+}
+
+/* 🚨 CORRECTION DÉFINITIVE : CHECKLIST DU PILOTE 🚨 */
+#checklist-modal .modal-content {
+    background-color: #ffffff !important; 
+    background: #ffffff !important; /* On force le fond blanc absolu */
+    border: 3px solid #0984e3 !important;
+    border-radius: 15px !important;
+    box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* On force TOUT le texte à l'intérieur à devenir sombre */
+#checklist-modal .modal-content * {
+    color: #2d3436 !important; 
+    text-shadow: none !important;
+}
+
+/* Sauf les titres qu'on met en bleu */
+#checklist-modal .modal-content h2, 
+#checklist-modal .modal-content h3 {
+    color: #0984e3 !important; 
+    font-weight: 800 !important;
+}
+
+/* Et le bouton qu'on met en vert avec du texte blanc */
+#checklist-modal .modal-content button {
+    background-color: #00b894 !important; 
+    color: #ffffff !important; 
+    font-weight: bold !important;
+    border: none !important;
+    box-shadow: 0 4px 10px rgba(0, 184, 148, 0.4) !important;
+}
+/* ================================================= */
+/* 💥 ANIMATION INTERACTIVE DES BOUTONS (CLIC) 💥    */
+/* ================================================= */
+
+/* Effet "Bouton Enfoncé" quand on appuie sur l'écran ou la souris */
+.btn-round:active, 
+.btn-big:active, 
+.action-button:active, 
+button:active,
+.shop-item:active {
+    transform: scale(0.90) !important; /* Le bouton rétrécit comme s'il s'enfonçait */
+    box-shadow: inset 0px 3px 5px rgba(0,0,0,0.2) !important; /* L'ombre passe à l'intérieur */
+    filter: brightness(0.9) !important; /* S'assombrit légèrement */
+    transition: all 0.05s ease !important; /* Réaction ultra-rapide au clic */
+}
+
+/* Effet "Survol" quand on passe la souris au-dessus (surtout pour PC) */
+.btn-round:hover, 
+.btn-big:hover, 
+.action-button:hover {
+    transform: scale(1.05); /* Grossit très légèrement */
+    filter: brightness(1.1); /* Devient un peu plus lumineux */
+    transition: all 0.2s ease;
+}
+
+/* Corriger l'animation de retour pour qu'elle soit fluide quand on lâche le bouton */
+.btn-round, .btn-big, .action-button, button, .shop-item {
+    transition: all 0.2s ease;
+}
+/* ================================================= */
+/* MASQUER LES INDICATEURS DE RESPIRATION (🛑 et ⏱️) */
+/* ================================================= */
+body.hide-punctuation .respiration-courte,
+body.hide-punctuation .respiration-longue {
+    display: none !important;
+}
+/* ================================================= */
+/* 🏆 NOUVEAU POPUP DE FIN DE LEÇON (MAGNIFIQUE) 🏆 */
+/* ================================================= */
+
+/* 1. Le fond sombre et flouté qui prend tout l'écran */
+#kpi-modal {
+    display: none; /* Géré par le système */
+    position: fixed !important;
+    top: 0 !important; 
+    left: 0 !important; 
+    width: 100vw !important; 
+    height: 100vh !important;
+    background: rgba(15, 23, 42, 0.85) !important; /* Bleu nuit très élégant */
+    backdrop-filter: blur(10px) !important; /* Effet verre dépoli */
+    z-index: 99999 !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* 2. La carte centrale lumineuse */
+#kpi-modal .modal-content, 
+#kpi-modal .diploma-container {
+    background: linear-gradient(145deg, #ffffff, #f8f9fa) !important;
+    border: none !important;
+    border-radius: 30px !important;
+    padding: 40px !important;
+    width: 90% !important;
+    max-width: 550px !important;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.5), 0 0 0 8px rgba(255, 255, 255, 0.1) !important;
+    text-align: center !important;
+    position: relative !important;
+    animation: popInModal 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+    margin: 0 !important; /* Centrage parfait */
+}
+
+/* L'animation d'apparition "rebond" */
+@keyframes popInModal {
+    0% { transform: scale(0.7) translateY(50px); opacity: 0; }
+    100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+/* 3. Le grand titre */
+#kpi-modal .diploma-header {
+    font-size: 2.2rem !important;
+    color: #0984e3 !important;
+    margin-bottom: 25px !important;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+    font-family: 'Fredoka One', cursive, sans-serif !important;
+}
+
+/* 4. Les lignes de statistiques (transformées en jolies bulles) */
+#kpi-modal .kpi-row {
+    background: #ffffff !important;
+    border: 2px solid #f1f2f6 !important;
+    border-radius: 15px !important;
+    padding: 12px 25px !important;
+    margin-bottom: 12px !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    font-size: 1.2rem !important;
+    color: #2d3436 !important;
+    font-weight: bold !important;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.03) !important;
+}
+
+/* La valeur de la statistique (à gauche en arabe) mise en valeur */
+#kpi-modal .kpi-row span:last-child {
+    color: #0984e3 !important;
+    font-size: 1.4rem !important;
+    background: #e3f2fd !important;
+    padding: 5px 15px !important;
+    border-radius: 10px !important;
+}
+
+/* 5. La boîte de message de l'IA (Le Coach Chat 🐱) */
+#kpi-modal .ai-comment-box {
+    background: #f0f4f8 !important;
+    border: none !important;
+    border-right: 6px solid #6c5ce7 !important; /* Bordure violette à droite pour l'Arabe */
+    border-radius: 15px !important;
+    padding: 20px !important;
+    font-size: 1.2rem !important;
+    color: #2c3e50 !important;
+    margin-top: 25px !important;
+    line-height: 1.6 !important;
+    font-style: normal !important;
+}
+
+/* 6. Le gros bouton pour fermer/continuer */
+#kpi-modal button {
+    background: linear-gradient(135deg, #00b894, #00cec9) !important;
+    color: white !important;
+    font-size: 1.2rem !important;
+    padding: 15px 40px !important;
+    border-radius: 50px !important;
+    border: none !important;
+    font-weight: bold !important;
+    cursor: pointer !important;
+    box-shadow: 0 10px 20px rgba(0, 184, 148, 0.3) !important;
+    margin-top: 25px !important;
+    width: 80% !important;
+}
+/* ================================================= */
+/* 🎨 NOUVEAU DESIGN : ÉTIQUETTE CACHÉE MAUVE CLAIR  */
+/* ================================================= */
+
+/* Apparence de la jolie étiquette mauve qui recouvre le mot */
+.mot-cliquable.masked {
+    background-color: #a29bfe !important; /* Un beau mauve clair (couleur LUNOO) */
+    color: transparent !important; /* Le texte original devient totalement invisible */
+    border-radius: 10px !important; /* Bords bien arrondis */
+    border: 2px solid #6c5ce7 !important; /* Petite bordure violette pour délimiter */
+    box-shadow: 0 4px 8px rgba(162, 155, 254, 0.4) !important; /* Ombre douce */
+    transition: all 0.2s ease !important;
+    position: relative;
+    display: inline-block;
+    min-width: 40px; /* S'assure que l'étiquette n'est jamais trop petite */
+}
+
+/* Le point d'interrogation au centre de l'étiquette */
+.mot-cliquable.masked::after {
+    content: '❓';
+    color: #ffffff !important; /* Blanc pur */
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.6em; /* Taille parfaite pour tenir dans l'étiquette */
+    pointer-events: none;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
+}
+
+/* Petit effet quand on passe la souris dessus avant de révéler */
+.mot-cliquable.masked:hover {
+    background-color: #b1aafd !important; /* S'éclaircit légèrement */
+    transform: scale(1.05) !important;
+    cursor: pointer !important;
+}
+
+/* ================================================= */
+/* 📏 SÉCURITÉ : LIGNE DE FOCUS TOUJOURS VISIBLE     */
+/* ================================================= */
+#focus-line {
+    z-index: 9999 !important; 
+    pointer-events: none !important; 
+}/* ================================================= */
+/* 🌟 LE NOUVEAU POPUP D'INFORMATION (STATUT)        */
+/* ================================================= */
+#status {
+    /* Le fond coloré (dégradé bleu magique) */
+    background: linear-gradient(135deg, #0984e3, #74b9ff) !important; 
+    color: white !important;
+    
+    /* La forme de pilule / bulle */
+    padding: 12px 25px !important;
+    border-radius: 50px !important; 
+    border: 3px solid white !important;
+    
+    /* Le texte plus lisible */
+    font-size: 16px !important;
+    font-weight: bold !important;
+    letter-spacing: 0px !important;
+    text-transform: none !important;
+    
+    /* L'ombre pour l'effet "flottant" (Pop-up) */
+    box-shadow: 0 8px 15px rgba(9, 132, 227, 0.4), inset 0 2px 4px rgba(255,255,255,0.4) !important;
+    
+    /* Le positionnement centré */
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 25px auto 10px auto !important;
+    min-width: 250px;
+    position: relative;
+    z-index: 50;
+    transition: all 0.3s ease !important;
+}
+
+/* ⬇️ La petite flèche en bas pour faire un effet "Bulle de dialogue" qui pointe vers le hibou */
+#status::after {
+    content: '';
+    position: absolute;
+    bottom: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 10px 10px 0;
+    border-style: solid;
+    border-color: #0984e3 transparent transparent transparent;
+    display: block;
+}
+/* Couleurs alternées pour les syllabes */
+    .syllabe-0 { color: #d63033; font-weight: bold; } /* Rouge */
+    .syllabe-1 { color: #0984e3; font-weight: bold; } /* Bleu */
+    
+    /* Le séparateur (Slash) */
+    .syllabe-sep { color: #ccc; margin: 0 3px; font-weight: normal; }
+    
+    /* Effet Loupe Dynamique pendant le Karaoké */
+    .highlight-mot.loupe-active {
+        transform: scale(1.4);
+        display: inline-block;
+        transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        background: rgba(253, 203, 110, 0.3); /* Léger surlignage jaune */
+        border-radius: 8px;
+        padding: 0 5px;
+        z-index: 10;
+        position: relative;
+    }
+/* Animation pour que la popup apparaisse avec un effet "ressort" */
+        @keyframes popIn { 
+            0% { transform: scale(0.5); opacity: 0; } 
+            100% { transform: scale(1); opacity: 1; } 
+        }
+</style>
