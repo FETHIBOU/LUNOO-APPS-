@@ -1,38 +1,43 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lunoo - Apprentissage Magique</title>
+    <title>Lunoo - Lancement...</title>
     <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
     <style>
         body { 
-            margin: 0; padding: 0; height: 100vh; overflow: hidden;
-            display: flex; flex-direction: column; align-items: center;
-            background: radial-gradient(circle at bottom, #dfdaff 0%, #1a1a2e 100%);
+            margin: 0; padding: 0; height: 100vh; 
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            background: #1a1a2e; color: white;
+            font-family: 'Fredoka One', cursive;
         }
-        header { text-align: center; padding: 15px; }
-        img { width: 80px; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5)); border-radius: 50%; }
-        h1 { font-family: 'Fredoka One', cursive; color: #a29bfe; margin: 5px 0 0 0; font-size: 24px; }
-        
-        /* C'est ici qu'on charge l'application Google */
-        iframe { width: 100%; flex-grow: 1; border: none; background: transparent; }
+        img { 
+            width: 120px; border-radius: 50%;
+            box-shadow: 0 0 30px rgba(162, 155, 254, 0.5);
+            animation: pulse 2s infinite;
+        }
+        h1 { color: #a29bfe; margin-top: 20px; }
+        p { color: #888; font-family: sans-serif; }
+
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 20px rgba(162, 155, 254, 0.3); }
+            50% { transform: scale(1.05); box-shadow: 0 0 40px rgba(162, 155, 254, 0.8); }
+            100% { transform: scale(1); box-shadow: 0 0 20px rgba(162, 155, 254, 0.3); }
+        }
     </style>
+    <script>
+        // Redirection vers votre application Google après 2 secondes
+        setTimeout(() => {
+            window.location.href = "https://script.google.com/macros/s/AKfycbzyN1-uDhSO6OpuRDXx-BvK-EqovwaDxYwCA6bd5BMmSe8Pz6ZN7ndicdZK48uvUqAi/exec";
+        }, 2000);
+    </script>
 </head>
 <body>
 
-    <header>
-        <img src="logo_lunoo.jpg" alt="Lunoo Logo">
-        <h1>Lunoo</h1>
-    </header>
-
-    <!-- Copiez ceci exactement à la place de votre Iframe actuel -->
-<iframe 
-    src="https://script.google.com/macros/s/AKfycbzyN1-uDhSO6OpuRDXx-BvK-EqovwaDxYwCA6bd5BMmSe8Pz6ZN7ndicdZK48uvUqAi/exec" 
-    allow="camera *; microphone *; autoplay *; display-capture *" 
-    allowusermedia="true"
-    style="width: 100%; height: 100%; border: none; background: transparent;">
-</iframe>
+    <img src="logo_lunoo.jpg" alt="Lunoo Logo">
+    <h1>Préparation de Lunoo...</h1>
+    <p>Vous allez être redirigé vers l'application sécurisée.</p>
 
 </body>
 </html>
